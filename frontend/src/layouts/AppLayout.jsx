@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Package, Settings, ShoppingCart } from "lucide-react";
+import { LayoutDashboard, LogOut, Package, Receipt, Settings, ShoppingCart } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/transactions", label: "Transactions", icon: Receipt },
   { to: "/pos", label: "POS", icon: ShoppingCart },
   { to: "/inventory", label: "Inventory", icon: Package },
   { to: "/account", label: "Account Setting", icon: Settings },

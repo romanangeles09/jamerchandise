@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
 import Login from "./pages/Login";
 import POS from "./pages/POS";
+import Transactions from "./pages/Transactions";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -26,6 +27,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<Dashboard />} />
+        <Route path="/transactions" element={<Transactions />} />
         <Route path="/pos" element={<POS />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/account" element={<AccountSetting />} />

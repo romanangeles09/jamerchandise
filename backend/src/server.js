@@ -9,7 +9,23 @@ const saleRoutes = require("./routes/sales");
 const dashboardRoutes = require("./routes/dashboard");
 
 const app = express();
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -31,8 +47,8 @@ const port = process.env.PORT || 5000;
 
 connectDb()
   .then(() => {
-    app.listen(port, () => {
-      console.log(`JA Merchandise API running on http://localhost:${port}`);
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`JA Merchandise API running on port ${port}`);
     });
   })
   .catch((error) => {

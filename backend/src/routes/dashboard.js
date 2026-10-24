@@ -7,17 +7,25 @@ const { protect } = require("../middleware/auth");
 const router = express.Router();
 router.use(protect);
 
-function startOfDay(date = new Date()) {
-  const value = new Date(date);
-  value.setHours(0, 0, 0, 0);
-  return value;
+const TIMEZONE = "Asia/Manila";
+
+function manilaDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function startOfManilaDay(date = new Date()) {
+  return new Date(`${manilaDateKey(date)}T00:00:00+08:00`);
 }
 
 router.get("/", async (_req, res) => {
   try {
-    const todayStart = startOfDay();
-    const weekStart = startOfDay();
-    weekStart.setDate(weekStart.getDate() - 6);
+    const todayStart = startOfManilaDay();
+    const weekStart = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
 
     const [todayAgg] = await Sale.aggregate([
       { $match: { createdAt: { $gte: todayStart } } },
@@ -36,7 +44,7 @@ router.get("/", async (_req, res) => {
       { $match: { createdAt: { $gte: weekStart } } },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: TIMEZONE } },
           revenue: { $sum: "$total" },
           sales: { $sum: 1 },
         },
@@ -46,12 +54,11 @@ router.get("/", async (_req, res) => {
 
     const weekMap = Object.fromEntries(weekRows.map((row) => [row._id, row]));
     const weekly = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(weekStart);
-      date.setDate(weekStart.getDate() + index);
-      const key = date.toISOString().slice(0, 10);
+      const date = new Date(weekStart.getTime() + index * 24 * 60 * 60 * 1000);
+      const key = manilaDateKey(date);
       return {
         date: key,
-        label: date.toLocaleDateString("en-US", { weekday: "short" }),
+        label: date.toLocaleDateString("en-PH", { weekday: "short", timeZone: TIMEZONE }),
         revenue: weekMap[key]?.revenue || 0,
         sales: weekMap[key]?.sales || 0,
       };
