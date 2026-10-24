@@ -1,0 +1,84 @@
+const express = require("express");
+const User = require("../models/User");
+const { protect, signToken, toUserResponse } = require("../middleware/auth");
+
+const router = express.Router();
+
+router.post("/login", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required." });
+    }
+
+    const user = await User.findOne({ email }).select("+password");
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+    if (!user.isActive) {
+      return res.status(401).json({ message: "This account is disabled." });
+    }
+
+    const token = signToken(user);
+    res.json({ token, user: toUserResponse(user) });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to log in right now." });
+  }
+});
+
+router.get("/me", protect, (req, res) => {
+  res.json({ user: toUserResponse(req.user) });
+});
+
+router.put("/profile", protect, async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Name and email are required." });
+    }
+
+    const existing = await User.findOne({ email, _id: { $ne: req.user._id } });
+    if (existing) {
+      return res.status(400).json({ message: "That email is already in use." });
+    }
+
+    req.user.name = name;
+    req.user.email = email;
+    await req.user.save();
+
+    res.json({ user: toUserResponse(req.user) });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to update profile." });
+  }
+});
+
+router.put("/password", protect, async (req, res) => {
+  try {
+    const currentPassword = String(req.body.currentPassword || "");
+    const newPassword = String(req.body.newPassword || "");
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new passwords are required." });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters." });
+    }
+
+    const user = await User.findById(req.user._id).select("+password");
+    if (!(await user.comparePassword(currentPassword))) {
+      return res.status(400).json({ message: "Current password is incorrect." });
+    }
+
+    user.password = newPassword;
+    await user.save();
+    res.json({ message: "Password updated." });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to update password." });
+  }
+});
+
+module.exports = router;
