@@ -1,6 +1,8 @@
 const express = require("express");
 const User = require("../models/User");
 const { protect, signToken, toUserResponse } = require("../middleware/auth");
+const { handleImageUpload } = require("../lib/upload");
+const { uploadProfileImage, destroyImage } = require("../lib/cloudinary");
 
 const router = express.Router();
 
@@ -10,12 +12,12 @@ router.post("/login", async (req, res) => {
     const password = String(req.body.password || "");
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required." });
+      return res.status(400).json({ message: "Email/username and password are required." });
     }
 
     const user = await User.findOne({ email }).select("+password");
     if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ message: "Invalid email or password." });
+      return res.status(401).json({ message: "Invalid email/username or password." });
     }
     if (!user.isActive) {
       return res.status(401).json({ message: "This account is disabled." });
@@ -32,7 +34,7 @@ router.get("/me", protect, (req, res) => {
   res.json({ user: toUserResponse(req.user) });
 });
 
-router.put("/profile", protect, async (req, res) => {
+router.put("/profile", protect, handleImageUpload, async (req, res) => {
   try {
     const name = String(req.body.name || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
@@ -48,11 +50,23 @@ router.put("/profile", protect, async (req, res) => {
 
     req.user.name = name;
     req.user.email = email;
+
+    if (req.file) {
+      if (req.user.avatarPublicId) await destroyImage(req.user.avatarPublicId);
+      const result = await uploadProfileImage(req.file);
+      req.user.avatarUrl = result.secure_url;
+      req.user.avatarPublicId = result.public_id;
+    } else if (String(req.body.removeImage) === "true") {
+      if (req.user.avatarPublicId) await destroyImage(req.user.avatarPublicId);
+      req.user.avatarUrl = "";
+      req.user.avatarPublicId = "";
+    }
+
     await req.user.save();
 
     res.json({ user: toUserResponse(req.user) });
   } catch (error) {
-    res.status(500).json({ message: "Unable to update profile." });
+    res.status(error.status || 500).json({ message: error.message || "Unable to update profile." });
   }
 });
 

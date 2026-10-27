@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { ACCESS_PAGES } = require("../lib/access");
 
 const userSchema = new mongoose.Schema(
   {
@@ -7,7 +8,10 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
     role: { type: String, enum: ["SuperAdmin", "Admin", "Cashier"], default: "Cashier" },
+    access: { type: [String], enum: ACCESS_PAGES, default: ["pos", "cutoff", "account"] },
     isActive: { type: Boolean, default: true },
+    avatarUrl: { type: String, default: "" },
+    avatarPublicId: { type: String, default: "" },
   },
   { timestamps: true }
 );

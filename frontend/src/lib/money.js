@@ -1,5 +1,13 @@
 export const TIMEZONE = "Asia/Manila";
 
+export function manilaToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+}
+
+export function manilaYear() {
+  return Number(new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, year: "numeric" }).format(new Date()));
+}
+
 export function peso(value) {
   return new Intl.NumberFormat("en-PH", {
     style: "currency",

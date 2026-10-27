@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { hasAccess, resolveAccess } = require("../lib/access");
 
 async function protect(req, res, next) {
   try {
@@ -22,6 +23,15 @@ async function protect(req, res, next) {
   }
 }
 
+function requireAccess(page) {
+  return (req, res, next) => {
+    if (!hasAccess(req.user, page)) {
+      return res.status(403).json({ message: "You do not have access to this page." });
+    }
+    next();
+  };
+}
+
 function signToken(user) {
   return jwt.sign(
     { id: user._id, role: user.role },
@@ -36,7 +46,10 @@ function toUserResponse(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    access: resolveAccess(user),
+    isActive: user.isActive !== false,
+    avatarUrl: user.avatarUrl || "",
   };
 }
 
-module.exports = { protect, signToken, toUserResponse };
+module.exports = { protect, requireAccess, signToken, toUserResponse };

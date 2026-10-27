@@ -24,8 +24,14 @@ const saleSchema = new mongoose.Schema(
     change: { type: Number, default: 0, min: 0 },
     paymentMethod: { type: String, enum: ["cash", "gcash", "card"], default: "cash" },
     cashier: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
   },
   { timestamps: true }
 );
+
+saleSchema.pre("validate", function setUserId(next) {
+  if (!this.userId && this.cashier) this.userId = this.cashier;
+  next();
+});
 
 module.exports = mongoose.model("Sale", saleSchema);

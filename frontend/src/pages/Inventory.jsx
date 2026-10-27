@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { getErrorMessage } from "../lib/api";
+import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import Modal from "../components/Modal";
 
@@ -11,11 +12,14 @@ const emptyProduct = {
   unit: "pc",
   retailPrice: "",
   wholesalePrice: "",
-  wholesaleMinQty: 6,
+  wholesaleMinQty: "",
   costPrice: "",
   stock: "",
   reorderLevel: 10,
   isActive: true,
+  imageFile: null,
+  previewUrl: "",
+  removeImage: false,
 };
 
 const emptyCategory = { name: "", description: "" };
@@ -56,19 +60,25 @@ export default function Inventory() {
     setSaving(true);
     setError("");
     try {
-      const payload = {
-        ...productForm,
-        retailPrice: Number(productForm.retailPrice),
-        wholesalePrice: Number(productForm.wholesalePrice),
-        wholesaleMinQty: Number(productForm.wholesaleMinQty),
-        costPrice: Number(productForm.costPrice || 0),
-        stock: Number(productForm.stock || 0),
-        reorderLevel: Number(productForm.reorderLevel || 10),
-      };
+      const form = new FormData();
+      form.append("name", productForm.name);
+      form.append("sku", productForm.sku);
+      form.append("barcode", productForm.barcode || "");
+      form.append("category", productForm.category);
+      form.append("unit", productForm.unit || "pc");
+      form.append("retailPrice", String(Number(productForm.retailPrice)));
+      form.append("wholesalePrice", productForm.wholesalePrice === "" || productForm.wholesalePrice == null ? "" : String(Number(productForm.wholesalePrice)));
+      form.append("wholesaleMinQty", productForm.wholesaleMinQty === "" || productForm.wholesaleMinQty == null ? "" : String(Number(productForm.wholesaleMinQty)));
+      form.append("costPrice", productForm.costPrice === "" || productForm.costPrice == null ? "" : String(Number(productForm.costPrice)));
+      form.append("stock", String(Number(productForm.stock || 0)));
+      form.append("reorderLevel", String(Number(productForm.reorderLevel || 10)));
+      form.append("isActive", productForm.isActive !== false ? "true" : "false");
+      if (productForm.imageFile) form.append("image", productForm.imageFile);
+      if (productForm.removeImage) form.append("removeImage", "true");
       if (productForm._id) {
-        await api.put(`/products/${productForm._id}`, payload);
+        await api.put(`/products/${productForm._id}`, form);
       } else {
-        await api.post("/products", payload);
+        await api.post("/products", form);
       }
       setProductForm(null);
       await load();
@@ -157,6 +167,7 @@ export default function Inventory() {
             <table>
               <thead>
                 <tr>
+                  <th />
                   <th>Product</th>
                   <th>Category</th>
                   <th>Retail</th>
@@ -168,6 +179,13 @@ export default function Inventory() {
               <tbody>
                 {filteredProducts.map((product) => (
                   <tr key={product._id}>
+                    <td className="thumb-cell">
+                      {product.hasImage ? (
+                        <img src={productImageSrc(product)} alt="" className="product-thumb" />
+                      ) : (
+                        <span className="product-thumb placeholder">{product.name.slice(0, 1)}</span>
+                      )}
+                    </td>
                     <td>
                       <strong>{product.name}</strong>
                       <small className="block">{product.sku}</small>
@@ -175,14 +193,35 @@ export default function Inventory() {
                     <td>{product.category?.name}</td>
                     <td>{peso(product.retailPrice)}</td>
                     <td>
-                      {peso(product.wholesalePrice)}
-                      <small className="block">min {product.wholesaleMinQty}</small>
+                      {Number(product.wholesalePrice) > 0 ? (
+                        <>
+                          {peso(product.wholesalePrice)}
+                          <small className="block">min {product.wholesaleMinQty || 1}</small>
+                        </>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className={product.stock <= product.reorderLevel ? "warn" : ""}>
                       {product.stock} {product.unit}
                     </td>
                     <td className="row-actions">
-                      <button type="button" onClick={() => setProductForm({ ...product, category: product.category?._id || product.category })}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setProductForm({
+                            ...emptyProduct,
+                            ...product,
+                            category: product.category?._id || product.category,
+                            wholesalePrice: product.wholesalePrice ?? "",
+                            wholesaleMinQty: product.wholesaleMinQty ?? "",
+                            costPrice: product.costPrice ?? "",
+                            imageFile: null,
+                            previewUrl: productImageSrc(product),
+                            removeImage: false,
+                          })
+                        }
+                      >
                         Edit
                       </button>
                       <button type="button" className="danger-text" onClick={() => removeProduct(product._id)}>
@@ -231,6 +270,49 @@ export default function Inventory() {
       {productForm ? (
         <Modal title={productForm._id ? "Edit product" : "New product"} onClose={() => setProductForm(null)}>
           <form className="form-grid" onSubmit={saveProduct}>
+            <label className="full">
+              Product image
+              <div className="image-picker">
+                {productForm.previewUrl && !productForm.removeImage ? (
+                  <img src={productForm.previewUrl} alt="" className="image-preview" />
+                ) : (
+                  <span className="image-preview placeholder">No photo</span>
+                )}
+                <div>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      setProductForm({
+                        ...productForm,
+                        imageFile: file,
+                        previewUrl: URL.createObjectURL(file),
+                        removeImage: false,
+                      });
+                    }}
+                  />
+                  <small className="hint">JPG, PNG, WEBP, or GIF up to 2 MB.</small>
+                  {productForm.previewUrl && !productForm.removeImage ? (
+                    <button
+                      type="button"
+                      className="danger-text"
+                      onClick={() =>
+                        setProductForm({
+                          ...productForm,
+                          imageFile: null,
+                          previewUrl: "",
+                          removeImage: true,
+                        })
+                      }
+                    >
+                      Remove photo
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </label>
             <label>
               Name
               <input value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} required />
@@ -268,15 +350,15 @@ export default function Inventory() {
             </label>
             <label>
               Wholesale price
-              <input type="number" min="0" step="0.01" value={productForm.wholesalePrice} onChange={(event) => setProductForm({ ...productForm, wholesalePrice: event.target.value })} required />
+              <input type="number" min="0" step="0.01" value={productForm.wholesalePrice} onChange={(event) => setProductForm({ ...productForm, wholesalePrice: event.target.value })} placeholder="Optional" />
             </label>
             <label>
               Wholesale min qty
-              <input type="number" min="1" value={productForm.wholesaleMinQty} onChange={(event) => setProductForm({ ...productForm, wholesaleMinQty: event.target.value })} />
+              <input type="number" min="1" value={productForm.wholesaleMinQty} onChange={(event) => setProductForm({ ...productForm, wholesaleMinQty: event.target.value })} placeholder="Optional" />
             </label>
             <label>
               Cost
-              <input type="number" min="0" step="0.01" value={productForm.costPrice} onChange={(event) => setProductForm({ ...productForm, costPrice: event.target.value })} />
+              <input type="number" min="0" step="0.01" value={productForm.costPrice} onChange={(event) => setProductForm({ ...productForm, costPrice: event.target.value })} placeholder="Optional" />
             </label>
             <label className="check">
               <input type="checkbox" checked={productForm.isActive} onChange={(event) => setProductForm({ ...productForm, isActive: event.target.checked })} />

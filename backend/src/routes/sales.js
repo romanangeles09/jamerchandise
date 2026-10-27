@@ -2,6 +2,7 @@ const express = require("express");
 const Product = require("../models/Product");
 const Sale = require("../models/Sale");
 const { protect } = require("../middleware/auth");
+const { ownSalesFilter } = require("../lib/salesScope");
 
 const router = express.Router();
 router.use(protect);
@@ -14,7 +15,7 @@ async function nextInvoiceNo() {
 router.get("/", async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 25, 100);
-    const sales = await Sale.find()
+    const sales = await Sale.find(ownSalesFilter(req.user))
       .populate("cashier", "name")
       .sort({ createdAt: -1 })
       .limit(limit);
@@ -27,7 +28,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const saleType = req.body.saleType === "wholesale" ? "wholesale" : "retail";
-    const paymentMethod = ["cash", "gcash", "card"].includes(req.body.paymentMethod)
+    const paymentMethod = ["cash", "gcash"].includes(req.body.paymentMethod)
       ? req.body.paymentMethod
       : "cash";
     const discount = Math.max(0, Number(req.body.discount) || 0);
@@ -58,10 +59,16 @@ router.post("/", async (req, res) => {
       if (product.stock < qty) {
         return res.status(400).json({ message: `Not enough stock for ${product.name}.` });
       }
-      if (saleType === "wholesale" && qty < product.wholesaleMinQty) {
-        return res.status(400).json({
-          message: `${product.name} requires at least ${product.wholesaleMinQty} ${product.unit} for wholesale.`,
-        });
+      if (saleType === "wholesale") {
+        if (!(Number(product.wholesalePrice) > 0)) {
+          return res.status(400).json({ message: `${product.name} is not available for wholesale.` });
+        }
+        const minQty = Number(product.wholesaleMinQty) > 0 ? product.wholesaleMinQty : 1;
+        if (qty < minQty) {
+          return res.status(400).json({
+            message: `${product.name} requires at least ${minQty} ${product.unit} for wholesale.`,
+          });
+        }
       }
 
       const unitPrice = saleType === "wholesale" ? product.wholesalePrice : product.retailPrice;
@@ -105,6 +112,7 @@ router.post("/", async (req, res) => {
       change: Number((amountPaid - total).toFixed(2)),
       paymentMethod,
       cashier: req.user._id,
+      userId: req.user._id,
     });
 
     await sale.populate("cashier", "name");

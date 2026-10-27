@@ -42,9 +42,13 @@ async function seed() {
       email,
       password: "SuperAdmin",
       role: "SuperAdmin",
+      access: ["dashboard", "transactions", "pos", "cutoff", "inventory", "users", "account"],
     });
     console.log("Seeded SuperAdmin: jabulakan@gmail.com / SuperAdmin");
   } else {
+    existingAdmin.role = "SuperAdmin";
+    existingAdmin.access = ["dashboard", "transactions", "pos", "cutoff", "inventory", "users", "account"];
+    await existingAdmin.save();
     console.log("SuperAdmin already exists.");
   }
 

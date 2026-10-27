@@ -7,6 +7,8 @@ const categoryRoutes = require("./routes/categories");
 const productRoutes = require("./routes/products");
 const saleRoutes = require("./routes/sales");
 const dashboardRoutes = require("./routes/dashboard");
+const { router: userRoutes } = require("./routes/users");
+const cutoffRoutes = require("./routes/cutoff");
 
 const app = express();
 const allowedOrigins = (
@@ -55,6 +57,8 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/cutoff", cutoffRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, ScanBarcode, Trash2 } from "lucide-react";
 import BarcodeScanner from "../components/BarcodeScanner";
 import api, { getErrorMessage } from "../lib/api";
+import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import Modal from "../components/Modal";
 
@@ -57,8 +58,17 @@ export default function POS() {
   const paid = Number(amountPaid);
   const change = Number.isNaN(paid) ? 0 : paid - total;
 
+  function hasWholesale(product) {
+    return Number(product?.wholesalePrice) > 0;
+  }
+
+  function wholesaleMin(product) {
+    const min = Number(product?.wholesaleMinQty);
+    return Number.isFinite(min) && min > 0 ? min : 1;
+  }
+
   function priceOf(product) {
-    return saleType === "wholesale" ? product.wholesalePrice : product.retailPrice;
+    return saleType === "wholesale" && hasWholesale(product) ? product.wholesalePrice : product.retailPrice;
   }
 
   function findByCode(code) {
@@ -72,7 +82,11 @@ export default function POS() {
   }
 
   function addProduct(product) {
-    const minQty = saleType === "wholesale" ? product.wholesaleMinQty : 1;
+    if (saleType === "wholesale" && !hasWholesale(product)) {
+      setError(`${product.name} is not available for wholesale.`);
+      return false;
+    }
+    const minQty = saleType === "wholesale" ? wholesaleMin(product) : 1;
     const existing = cart.find((item) => item.product === product._id);
     const nextQty = existing ? existing.qty + 1 : minQty;
 
@@ -126,7 +140,7 @@ export default function POS() {
     setCart((prev) =>
       prev.map((item) => {
         if (item.product !== id) return item;
-        const minQty = saleType === "wholesale" ? item.wholesaleMinQty : 1;
+        const minQty = saleType === "wholesale" ? wholesaleMin(item) : 1;
         return { ...item, qty: Math.min(item.stock, Math.max(minQty, qty)) };
       })
     );
@@ -234,14 +248,19 @@ export default function POS() {
               type="button"
               className="product-tile"
               onClick={() => addProduct(product)}
-              disabled={product.stock < 1}
+              disabled={product.stock < 1 || (saleType === "wholesale" && !hasWholesale(product))}
             >
+              {product.hasImage ? (
+                <img src={productImageSrc(product)} alt="" className="tile-photo" />
+              ) : (
+                <span className="tile-photo placeholder">{product.name.slice(0, 1)}</span>
+              )}
               <small>{product.category?.name}</small>
               <strong>{product.name}</strong>
               <span>{peso(priceOf(product))}</span>
               <em>
                 {product.stock} {product.unit}
-                {saleType === "wholesale" ? ` · min ${product.wholesaleMinQty}` : ""}
+                {saleType === "wholesale" && hasWholesale(product) ? ` · min ${wholesaleMin(product)}` : ""}
               </em>
             </button>
           ))}
@@ -290,7 +309,6 @@ export default function POS() {
           <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
             <option value="cash">Cash</option>
             <option value="gcash">GCash</option>
-            <option value="card">Card</option>
           </select>
         </label>
         <label>
