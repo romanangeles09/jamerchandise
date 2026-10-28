@@ -84,7 +84,8 @@ router.put("/:id", async (req, res) => {
     user.email = email;
     if (user.role !== "SuperAdmin" || req.user.role === "SuperAdmin") {
       user.role = cleanRole(req.body.role, req.user);
-      user.access = cleanAccess(req.body.access, user.role);
+      user.set("access", cleanAccess(req.body.access, user.role));
+      user.markModified("access");
     }
     if (req.body.isActive === false && String(user._id) === String(req.user._id)) {
       return res.status(400).json({ message: "You cannot disable your own account." });

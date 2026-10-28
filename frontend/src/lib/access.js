@@ -12,7 +12,6 @@ export function hasAccess(user, page) {
   if (!user) return false;
   if (user.role === "SuperAdmin") return true;
   const access = Array.isArray(user.access) ? user.access : [];
-  if (page === "cutoff" && access.includes("pos")) return true;
   return access.includes(page);
 }
 

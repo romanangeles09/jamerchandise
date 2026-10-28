@@ -10,8 +10,7 @@ function resolveAccess(user) {
   const access = Array.isArray(user.access)
     ? user.access.filter((page) => ACCESS_PAGES.includes(page))
     : [];
-  if (!access.length) return ["pos", "cutoff", "account"];
-  if (access.includes("pos") && !access.includes("cutoff")) return [...access, "cutoff"];
+  if (!access.length) return ["account"];
   return access;
 }
 
