@@ -20,7 +20,39 @@ const emptyProduct = {
   imageFile: null,
   previewUrl: "",
   removeImage: false,
+  skuManual: false,
+  costManual: false,
 };
+
+function skuPrefix(categoryName) {
+  const word = String(categoryName || "").trim().split(/\s+/)[0] || "PRD";
+  const letters = word.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
+  const base = letters || "PRD";
+  return base.length >= 3 ? base.slice(0, 3) : base.padEnd(3, "X");
+}
+
+function nextSku(categoryId, products, categories) {
+  const category = categories.find((item) => item._id === categoryId);
+  if (!category) return "";
+  const prefix = skuPrefix(category.name);
+  let max = 0;
+  for (const product of products) {
+    const sku = String(product.sku || "").toUpperCase();
+    if (!sku.startsWith(`${prefix}-`)) continue;
+    const n = Number(sku.slice(prefix.length + 1));
+    if (Number.isInteger(n) && n > max) max = n;
+  }
+  return `${prefix}-${String(max + 1).padStart(3, "0")}`;
+}
+
+function derivedCost(wholesalePrice, wholesaleMinQty) {
+  if (wholesalePrice === "" || wholesalePrice == null) return "";
+  const price = Number(wholesalePrice);
+  if (!Number.isFinite(price) || price < 0) return "";
+  const qty = wholesaleMinQty === "" || wholesaleMinQty == null ? 1 : Number(wholesaleMinQty);
+  if (!Number.isFinite(qty) || qty < 1) return "";
+  return String(Number((price * qty).toFixed(2)));
+}
 
 const emptyCategory = { name: "", description: "" };
 
@@ -133,7 +165,19 @@ export default function Inventory() {
         </div>
         <div className="page-actions">
           {tab === "products" ? (
-            <button type="button" className="btn primary" onClick={() => setProductForm({ ...emptyProduct, category: categories[0]?._id || "" })}>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                const category = categories[0]?._id || "";
+                setError("");
+                setProductForm({
+                  ...emptyProduct,
+                  category,
+                  sku: nextSku(category, products, categories),
+                });
+              }}
+            >
               Add product
             </button>
           ) : (
@@ -208,7 +252,8 @@ export default function Inventory() {
                     <td className="row-actions">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          setError("");
                           setProductForm({
                             ...emptyProduct,
                             ...product,
@@ -219,8 +264,10 @@ export default function Inventory() {
                             imageFile: null,
                             previewUrl: productImageSrc(product),
                             removeImage: false,
-                          })
-                        }
+                            skuManual: true,
+                            costManual: product.costPrice != null && product.costPrice !== "",
+                          });
+                        }}
                       >
                         Edit
                       </button>
@@ -270,6 +317,7 @@ export default function Inventory() {
       {productForm ? (
         <Modal title={productForm._id ? "Edit product" : "New product"} onClose={() => setProductForm(null)}>
           <form className="form-grid" onSubmit={saveProduct}>
+            {error ? <div className="alert full">{error}</div> : null}
             <label className="full">
               Product image
               <div className="image-picker">
@@ -319,7 +367,18 @@ export default function Inventory() {
             </label>
             <label>
               SKU
-              <input value={productForm.sku} onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} required />
+              <input
+                value={productForm.sku}
+                placeholder="Auto"
+                onChange={(event) => {
+                  const sku = event.target.value;
+                  setProductForm({
+                    ...productForm,
+                    sku: sku.trim() ? sku : nextSku(productForm.category, products, categories),
+                    skuManual: Boolean(sku.trim()),
+                  });
+                }}
+              />
             </label>
             <label>
               Barcode
@@ -327,7 +386,18 @@ export default function Inventory() {
             </label>
             <label>
               Category
-              <select value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })} required>
+              <select
+                value={productForm.category}
+                onChange={(event) => {
+                  const category = event.target.value;
+                  setProductForm({
+                    ...productForm,
+                    category,
+                    sku: productForm.skuManual ? productForm.sku : nextSku(category, products, categories),
+                  });
+                }}
+                required
+              >
                 <option value="">Select category</option>
                 {categories.map((item) => (
                   <option key={item._id} value={item._id}>
@@ -350,15 +420,60 @@ export default function Inventory() {
             </label>
             <label>
               Wholesale price
-              <input type="number" min="0" step="0.01" value={productForm.wholesalePrice} onChange={(event) => setProductForm({ ...productForm, wholesalePrice: event.target.value })} placeholder="Optional" />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={productForm.wholesalePrice}
+                onChange={(event) => {
+                  const wholesalePrice = event.target.value;
+                  setProductForm({
+                    ...productForm,
+                    wholesalePrice,
+                    costPrice: productForm.costManual
+                      ? productForm.costPrice
+                      : derivedCost(wholesalePrice, productForm.wholesaleMinQty),
+                  });
+                }}
+                placeholder="Optional"
+              />
             </label>
             <label>
               Wholesale min qty
-              <input type="number" min="1" value={productForm.wholesaleMinQty} onChange={(event) => setProductForm({ ...productForm, wholesaleMinQty: event.target.value })} placeholder="Optional" />
+              <input
+                type="number"
+                min="1"
+                value={productForm.wholesaleMinQty}
+                onChange={(event) => {
+                  const wholesaleMinQty = event.target.value;
+                  setProductForm({
+                    ...productForm,
+                    wholesaleMinQty,
+                    costPrice: productForm.costManual
+                      ? productForm.costPrice
+                      : derivedCost(productForm.wholesalePrice, wholesaleMinQty),
+                  });
+                }}
+                placeholder="Optional"
+              />
             </label>
             <label>
               Cost
-              <input type="number" min="0" step="0.01" value={productForm.costPrice} onChange={(event) => setProductForm({ ...productForm, costPrice: event.target.value })} placeholder="Optional" />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={productForm.costPrice}
+                onChange={(event) => {
+                  const costPrice = event.target.value;
+                  setProductForm({
+                    ...productForm,
+                    costPrice: costPrice.trim() ? costPrice : derivedCost(productForm.wholesalePrice, productForm.wholesaleMinQty),
+                    costManual: Boolean(costPrice.trim()),
+                  });
+                }}
+                placeholder="Auto"
+              />
             </label>
             <label className="check">
               <input type="checkbox" checked={productForm.isActive} onChange={(event) => setProductForm({ ...productForm, isActive: event.target.checked })} />

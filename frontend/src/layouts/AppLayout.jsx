@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { ClipboardCheck, LayoutDashboard, LogOut, Package, Receipt, Settings, ShoppingCart, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardCheck, LayoutDashboard, LogOut, Package, Receipt, Settings, ShoppingCart, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { hasAccess } from "../lib/access";
 
@@ -16,18 +17,28 @@ const nav = [
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("ja_nav_collapsed") === "1");
 
   function handleLogout() {
     logout();
     navigate("/login");
   }
 
+  function toggleNav() {
+    setCollapsed((open) => {
+      const next = !open;
+      localStorage.setItem("ja_nav_collapsed", next ? "1" : "0");
+      return next;
+    });
+  }
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={collapsed ? "shell collapsed" : "shell"}>
+      <div className={collapsed ? "sidebar-wrap collapsed" : "sidebar-wrap"}>
+      <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
         <div className="brand">
           <span className="brand-mark">JA</span>
-          <div>
+          <div className="brand-text">
             <strong>JA Merchandise</strong>
             <small>Wholesale & Retail POS</small>
           </div>
@@ -39,36 +50,47 @@ export default function AppLayout() {
             .map((item) => {
               const Icon = item.icon;
               return (
-                <NavLink key={item.to} to={item.to} end={item.end} className="nav-link">
+                <NavLink key={item.to} to={item.to} end={item.end} className="nav-link" title={item.label}>
                   <Icon size={18} />
-                  {item.label}
+                  <span>{item.label}</span>
                 </NavLink>
               );
             })}
         </nav>
 
         <div className="sidebar-foot">
-          <div className="user-chip">
+          <div className="user-chip" title={`${user?.name || ""} · ${user?.role || ""}`}>
             {user?.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="user-avatar" />
             ) : (
               <span>{user?.name?.slice(0, 1) || "J"}</span>
             )}
-            <div>
+            <div className="user-meta">
               <strong>{user?.name}</strong>
               <small>{user?.role}</small>
             </div>
           </div>
-          <button type="button" className="logout-btn" onClick={handleLogout}>
+          <button type="button" className="logout-btn" onClick={handleLogout} title="Log out">
             <LogOut size={16} />
-            Log out
+            <span>Log out</span>
           </button>
         </div>
       </aside>
+      </div>
 
       <main className="content">
         <Outlet />
       </main>
+
+      <button
+        type="button"
+        className="nav-toggle"
+        onClick={toggleNav}
+        aria-label={collapsed ? "Show navigation" : "Hide navigation"}
+        title={collapsed ? "Show navigation" : "Hide navigation"}
+      >
+        {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+      </button>
     </div>
   );
 }

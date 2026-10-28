@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { getErrorMessage } from "../lib/api";
 import { formatDate, peso } from "../lib/money";
+import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
 export default function Transactions() {
@@ -91,7 +92,8 @@ export default function Transactions() {
       {selected ? (
         <Modal title={`Ticket ${selected.invoiceNo}`} onClose={() => setSelected(null)}>
           <p className="caps">
-            {selected.saleType} · {selected.paymentMethod} · {formatDate(selected.createdAt)}
+            {selected.saleType} · {selected.paymentMethod}
+            {selected.gcashTxnNo ? ` · ${selected.gcashTxnNo}` : ""} · {formatDate(selected.createdAt)}
           </p>
           <p className="hint">Cashier: {selected.cashier?.name || "—"}</p>
           <ul className="stack-list compact">
@@ -126,14 +128,18 @@ export default function Transactions() {
               <dt>Paid</dt>
               <dd>{peso(selected.amountPaid)}</dd>
             </div>
+            {String(selected.paymentMethod).toLowerCase() === "gcash" ? (
+              <div>
+                <dt>GCash Txn No.</dt>
+                <dd>{selected.gcashTxnNo || "—"}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Change</dt>
               <dd>{peso(selected.change)}</dd>
             </div>
           </dl>
-          <button type="button" className="btn primary full" onClick={() => setSelected(null)}>
-            Close
-          </button>
+          <ReceiptActions onClose={() => setSelected(null)} onPrint={() => printReceipt(selected)} />
         </Modal>
       ) : null}
     </section>

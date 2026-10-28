@@ -4,6 +4,7 @@ import BarcodeScanner from "../components/BarcodeScanner";
 import api, { getErrorMessage } from "../lib/api";
 import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
+import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
 export default function POS() {
@@ -16,11 +17,13 @@ export default function POS() {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [amountPaid, setAmountPaid] = useState("");
+  const [gcashTxnNo, setGcashTxnNo] = useState("");
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanNotice, setScanNotice] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -146,7 +149,20 @@ export default function POS() {
     );
   }
 
-  async function checkout() {
+  function adjustQty(id, qty) {
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.product !== id) return item;
+          const minQty = saleType === "wholesale" ? wholesaleMin(item) : 1;
+          if (qty < minQty) return null;
+          return { ...item, qty: Math.min(item.stock, Math.max(minQty, qty)) };
+        })
+        .filter(Boolean)
+    );
+  }
+
+  function requestCheckout() {
     setError("");
     if (!pricedCart.length) {
       setError("Add items before checkout.");
@@ -156,7 +172,15 @@ export default function POS() {
       setError("Amount paid must cover the total.");
       return;
     }
+    if (paymentMethod === "gcash" && !gcashTxnNo.trim()) {
+      setError("GCash Txn No. is required.");
+      return;
+    }
+    setConfirming(true);
+  }
 
+  async function checkout() {
+    setError("");
     setBusy(true);
     try {
       const res = await api.post("/sales", {
@@ -164,16 +188,20 @@ export default function POS() {
         discount: safeDiscount,
         amountPaid: paid,
         paymentMethod,
+        gcashTxnNo: paymentMethod === "gcash" ? gcashTxnNo.trim() : "",
         items: pricedCart.map((item) => ({ product: item.product, qty: item.qty })),
       });
       setReceipt(res.data);
       setCart([]);
       setDiscount(0);
       setAmountPaid("");
+      setGcashTxnNo("");
+      setConfirming(false);
       const productRes = await api.get("/products", { params: { active: true } });
       setProducts(productRes.data);
     } catch (err) {
       setError(getErrorMessage(err, "Checkout failed."));
+      setConfirming(false);
     } finally {
       setBusy(false);
     }
@@ -306,11 +334,28 @@ export default function POS() {
         </label>
         <label>
           Payment
-          <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+          <select
+            value={paymentMethod}
+            onChange={(event) => {
+              const next = event.target.value;
+              setPaymentMethod(next);
+              if (next !== "gcash") setGcashTxnNo("");
+            }}
+          >
             <option value="cash">Cash</option>
             <option value="gcash">GCash</option>
           </select>
         </label>
+        {paymentMethod === "gcash" ? (
+          <label>
+            GCash Txn No.
+            <input
+              value={gcashTxnNo}
+              onChange={(event) => setGcashTxnNo(event.target.value)}
+              required
+            />
+          </label>
+        ) : null}
         <label>
           Amount paid
           <input
@@ -342,23 +387,43 @@ export default function POS() {
           </div>
         </dl>
 
-        <button type="button" className="btn primary full" onClick={checkout} disabled={busy}>
+        <button type="button" className="btn primary full" onClick={requestCheckout} disabled={busy}>
           {busy ? "Saving..." : "Complete sale"}
         </button>
       </aside>
 
       {scanning ? (
         <BarcodeScanner
-          notice={scanNotice}
           error={error}
+          cart={pricedCart}
           onScan={addByCode}
+          onUpdateQty={adjustQty}
           onClose={() => { setScanning(false); setScanNotice(""); }}
         />
       ) : null}
 
+      {confirming ? (
+        <Modal title="Are you sure?" onClose={() => !busy && setConfirming(false)}>
+          <p>
+            Complete this <span className="caps">{saleType}</span> sale for {peso(total)} via {paymentMethod === "gcash" ? `GCash (${gcashTxnNo.trim()})` : "Cash"}?
+          </p>
+          <div className="modal-actions">
+            <button type="button" className="btn" onClick={() => setConfirming(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button type="button" className="btn primary" onClick={checkout} disabled={busy}>
+              {busy ? "Saving..." : "Complete sale"}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+
       {receipt ? (
         <Modal title={`Ticket ${receipt.invoiceNo}`} onClose={() => setReceipt(null)}>
-          <p className="caps">{receipt.saleType} · {receipt.paymentMethod}</p>
+          <p className="caps">
+            {receipt.saleType} · {receipt.paymentMethod}
+            {receipt.gcashTxnNo ? ` · ${receipt.gcashTxnNo}` : ""}
+          </p>
           <ul className="stack-list compact">
             {receipt.items.map((item) => (
               <li key={item.sku}>
@@ -381,14 +446,22 @@ export default function POS() {
               <dt>Paid</dt>
               <dd>{peso(receipt.amountPaid)}</dd>
             </div>
+            {String(receipt.paymentMethod).toLowerCase() === "gcash" ? (
+              <div>
+                <dt>GCash Txn No.</dt>
+                <dd>{receipt.gcashTxnNo || "—"}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Change</dt>
               <dd>{peso(receipt.change)}</dd>
             </div>
           </dl>
-          <button type="button" className="btn primary full" onClick={() => setReceipt(null)}>
-            New sale
-          </button>
+          <ReceiptActions
+            actionLabel="New sale"
+            onClose={() => setReceipt(null)}
+            onPrint={() => printReceipt(receipt)}
+          />
         </Modal>
       ) : null}
     </section>

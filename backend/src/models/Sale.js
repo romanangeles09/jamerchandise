@@ -23,6 +23,7 @@ const saleSchema = new mongoose.Schema(
     amountPaid: { type: Number, required: true, min: 0 },
     change: { type: Number, default: 0, min: 0 },
     paymentMethod: { type: String, enum: ["cash", "gcash", "card"], default: "cash" },
+    gcashTxnNo: { type: String, default: "", trim: true },
     cashier: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
   },

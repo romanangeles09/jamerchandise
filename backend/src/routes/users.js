@@ -17,6 +17,17 @@ function cleanRole(role, actor) {
   return ["SuperAdmin", "Admin", "Cashier"].includes(role) ? role : "Cashier";
 }
 
+function readPincode(value, { required } = {}) {
+  const pincode = String(value || "").trim();
+  if (!pincode) {
+    return required ? { error: "PIN code is required." } : { pincode: "" };
+  }
+  if (!/^\d{8}$/.test(pincode)) {
+    return { error: "PIN code must be 8 digits." };
+  }
+  return { pincode };
+}
+
 router.get("/", async (_req, res) => {
   try {
     const users = await User.find().sort({ createdAt: 1 });
@@ -31,14 +42,16 @@ router.post("/", async (req, res) => {
     const name = String(req.body.name || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
+    const pin = readPincode(req.body.pincode, { required: true });
     const role = cleanRole(req.body.role, req.user);
     const access = cleanAccess(req.body.access, role);
 
     if (!name) return res.status(400).json({ message: "Name is required." });
     if (!email) return res.status(400).json({ message: "Email or username is required." });
     if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters." });
+    if (pin.error) return res.status(400).json({ message: pin.error });
 
-    const user = await User.create({ name, email, password, role, access, isActive: true });
+    const user = await User.create({ name, email, password, pincode: pin.pincode, role, access, isActive: true });
     res.status(201).json(toUserResponse(user));
   } catch (error) {
     if (error.code === 11000) {
@@ -85,6 +98,10 @@ router.put("/:id", async (req, res) => {
       }
       user.password = password;
     }
+
+    const pin = readPincode(req.body.pincode);
+    if (pin.error) return res.status(400).json({ message: pin.error });
+    if (pin.pincode) user.pincode = pin.pincode;
 
     await user.save();
     res.json(toUserResponse(user));

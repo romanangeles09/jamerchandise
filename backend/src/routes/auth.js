@@ -6,6 +6,26 @@ const { uploadProfileImage, destroyImage } = require("../lib/cloudinary");
 
 const router = express.Router();
 
+function sendSession(res, user) {
+  const token = signToken(user);
+  res.json({ token, user: toUserResponse(user) });
+}
+
+router.get("/staff", async (_req, res) => {
+  try {
+    const users = await User.find({
+      isActive: true,
+      role: { $ne: "SuperAdmin" },
+      pincode: { $exists: true, $nin: [null, ""] },
+    })
+      .select("name")
+      .sort({ name: 1 });
+    res.json(users.map((user) => ({ id: user._id, name: user.name })));
+  } catch (error) {
+    res.status(500).json({ message: "Unable to load staff." });
+  }
+});
+
 router.post("/login", async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
@@ -16,15 +36,37 @@ router.post("/login", async (req, res) => {
     }
 
     const user = await User.findOne({ email }).select("+password");
-    if (!user || !(await user.comparePassword(password))) {
+    if (!user || user.role !== "SuperAdmin" || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: "Invalid email/username or password." });
     }
     if (!user.isActive) {
       return res.status(401).json({ message: "This account is disabled." });
     }
 
-    const token = signToken(user);
-    res.json({ token, user: toUserResponse(user) });
+    sendSession(res, user);
+  } catch (error) {
+    res.status(500).json({ message: "Unable to log in right now." });
+  }
+});
+
+router.post("/pin-login", async (req, res) => {
+  try {
+    const userId = String(req.body.userId || "").trim();
+    const pincode = String(req.body.pincode || "").trim();
+
+    if (!userId || !/^\d{8}$/.test(pincode)) {
+      return res.status(400).json({ message: "Select a staff member and enter an 8-digit PIN." });
+    }
+
+    const user = await User.findById(userId).select("+pincode");
+    if (!user || user.role === "SuperAdmin" || !(await user.comparePincode(pincode))) {
+      return res.status(401).json({ message: "Invalid PIN." });
+    }
+    if (!user.isActive) {
+      return res.status(401).json({ message: "This account is disabled." });
+    }
+
+    sendSession(res, user);
   } catch (error) {
     res.status(500).json({ message: "Unable to log in right now." });
   }

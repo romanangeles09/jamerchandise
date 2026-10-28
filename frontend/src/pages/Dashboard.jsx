@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Package, ShoppingBag, Store, TriangleAlert, Wallet } from "lucide-react";
 import api, { getErrorMessage } from "../lib/api";
 import { formatDate, manilaYear, peso, weekdayShort } from "../lib/money";
+import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
 function niceCeil(value) {
@@ -513,7 +514,8 @@ export default function Dashboard() {
       {selectedTicket ? (
         <Modal title={`Ticket ${selectedTicket.invoiceNo}`} onClose={() => setSelectedTicket(null)}>
           <p className="caps">
-            {selectedTicket.saleType} · {selectedTicket.paymentMethod} · {formatDate(selectedTicket.createdAt)}
+            {selectedTicket.saleType} · {selectedTicket.paymentMethod}
+            {selectedTicket.gcashTxnNo ? ` · ${selectedTicket.gcashTxnNo}` : ""} · {formatDate(selectedTicket.createdAt)}
           </p>
           <p className="hint">Cashier: {selectedTicket.cashier?.name || "—"}</p>
           <ul className="stack-list compact">
@@ -544,10 +546,18 @@ export default function Dashboard() {
               <dt>Total</dt>
               <dd>{peso(selectedTicket.total)}</dd>
             </div>
+            {String(selectedTicket.paymentMethod).toLowerCase() === "gcash" ? (
+              <div>
+                <dt>GCash Txn No.</dt>
+                <dd>{selectedTicket.gcashTxnNo || "—"}</dd>
+              </div>
+            ) : null}
           </dl>
-          <button type="button" className="btn primary full" onClick={() => setSelectedTicket(null)}>
-            Back to month
-          </button>
+          <ReceiptActions
+            actionLabel="Back to month"
+            onClose={() => setSelectedTicket(null)}
+            onPrint={() => printReceipt(selectedTicket)}
+          />
         </Modal>
       ) : null}
     </section>

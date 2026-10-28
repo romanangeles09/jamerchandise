@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { Minus, Plus } from "lucide-react";
+import { peso } from "../lib/money";
 
-export default function BarcodeScanner({ notice, error, onScan, onClose }) {
+export default function BarcodeScanner({ error, cart, onScan, onUpdateQty, onClose }) {
   const videoRef = useRef(null);
   const onScanRef = useRef(onScan);
   const [manual, setManual] = useState("");
@@ -106,7 +108,31 @@ export default function BarcodeScanner({ notice, error, onScan, onClose }) {
           <p className="hint">Point the camera at a barcode. Keep scanning to add more items.</p>
         )}
         {error ? <p className="alert">{error}</p> : null}
-        {notice ? <p className="success">{notice}</p> : null}
+        {cart?.length ? (
+          <ul className="scan-cart">
+            {cart.map((item) => (
+              <li key={item.product}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <small>
+                    {peso(item.unitPrice)} / {item.unit}
+                  </small>
+                </div>
+                <div className="qty">
+                  <button type="button" onClick={() => onUpdateQty(item.product, item.qty - 1)} aria-label="Decrease quantity">
+                    <Minus size={14} />
+                  </button>
+                  <span>{item.qty}</span>
+                  <button type="button" onClick={() => onUpdateQty(item.product, item.qty + 1)} aria-label="Increase quantity">
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="hint">Scanned items will show here.</p>
+        )}
 
         <form className="scan-manual" onSubmit={submitManual}>
           <label>
@@ -114,7 +140,6 @@ export default function BarcodeScanner({ notice, error, onScan, onClose }) {
             <input
               value={manual}
               onChange={(event) => setManual(event.target.value)}
-              placeholder="APP001"
               autoFocus
             />
           </label>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Banknote, Package, Receipt, Wallet } from "lucide-react";
 import api, { getErrorMessage } from "../lib/api";
 import { formatDate, manilaToday, peso } from "../lib/money";
+import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
 export default function Cutoff() {
@@ -179,7 +180,8 @@ export default function Cutoff() {
       {selected ? (
         <Modal title={`Ticket ${selected.invoiceNo}`} onClose={() => setSelected(null)}>
           <p className="caps">
-            {selected.saleType} · {selected.paymentMethod} · {formatDate(selected.createdAt)}
+            {selected.saleType} · {selected.paymentMethod}
+            {selected.gcashTxnNo ? ` · ${selected.gcashTxnNo}` : ""} · {formatDate(selected.createdAt)}
           </p>
           <p className="hint">Cashier: {selected.cashier?.name || "—"}</p>
           <ul className="stack-list compact">
@@ -210,10 +212,14 @@ export default function Cutoff() {
               <dt>Total</dt>
               <dd>{peso(selected.total)}</dd>
             </div>
+            {String(selected.paymentMethod).toLowerCase() === "gcash" ? (
+              <div>
+                <dt>GCash Txn No.</dt>
+                <dd>{selected.gcashTxnNo || "—"}</dd>
+              </div>
+            ) : null}
           </dl>
-          <button type="button" className="btn primary full" onClick={() => setSelected(null)}>
-            Close
-          </button>
+          <ReceiptActions onClose={() => setSelected(null)} onPrint={() => printReceipt(selected)} />
         </Modal>
       ) : null}
     </section>

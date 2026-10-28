@@ -33,6 +33,7 @@ router.post("/", async (req, res) => {
       : "cash";
     const discount = Math.max(0, Number(req.body.discount) || 0);
     const amountPaid = Number(req.body.amountPaid);
+    const gcashTxnNo = String(req.body.gcashTxnNo || "").trim();
     const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
 
     if (!rawItems.length) {
@@ -40,6 +41,9 @@ router.post("/", async (req, res) => {
     }
     if (Number.isNaN(amountPaid) || amountPaid < 0) {
       return res.status(400).json({ message: "Amount paid is invalid." });
+    }
+    if (paymentMethod === "gcash" && !gcashTxnNo) {
+      return res.status(400).json({ message: "GCash Txn No. is required." });
     }
 
     const items = [];
@@ -111,6 +115,7 @@ router.post("/", async (req, res) => {
       amountPaid,
       change: Number((amountPaid - total).toFixed(2)),
       paymentMethod,
+      gcashTxnNo: paymentMethod === "gcash" ? gcashTxnNo : "",
       cashier: req.user._id,
       userId: req.user._id,
     });

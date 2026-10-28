@@ -3,6 +3,7 @@ const Product = require("../models/Product");
 const { protect } = require("../middleware/auth");
 const { handleImageUpload } = require("../lib/upload");
 const { uploadProductImage, destroyImage } = require("../lib/cloudinary");
+const { applyProductDefaults, saveProductWithSkuRetry } = require("../lib/productDefaults");
 
 const router = express.Router();
 
@@ -116,13 +117,15 @@ router.get("/", async (req, res) => {
 
 router.post("/", handleImageUpload, async (req, res) => {
   try {
+    const providedSku = Boolean(String(req.body.sku || "").trim());
     const data = productPayload(req.body);
+    await applyProductDefaults(data);
     const error = validateProduct(data);
     if (error) return res.status(400).json({ message: error });
 
     const product = new Product(data);
     await applyImage(product, req);
-    await product.save();
+    await saveProductWithSkuRetry(product, { regenerateSku: !providedSku });
     await product.populate("category", "name");
     res.status(201).json(toProductJson(product));
   } catch (error) {
@@ -135,16 +138,18 @@ router.post("/", handleImageUpload, async (req, res) => {
 
 router.put("/:id", handleImageUpload, async (req, res) => {
   try {
+    const providedSku = Boolean(String(req.body.sku || "").trim());
     const data = productPayload(req.body);
-    const error = validateProduct(data);
-    if (error) return res.status(400).json({ message: error });
-
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found." });
 
+    await applyProductDefaults(data, product);
+    const error = validateProduct(data);
+    if (error) return res.status(400).json({ message: error });
+
     Object.assign(product, data);
     await applyImage(product, req);
-    await product.save();
+    await saveProductWithSkuRetry(product, { regenerateSku: !providedSku });
     await product.populate("category", "name");
     res.json(toProductJson(product));
   } catch (error) {
