@@ -34,6 +34,12 @@ export function AuthProvider({ children }) {
         setUser(res.data.user);
         return res.data.user;
       },
+      async loginWithPin(userId, pincode) {
+        const res = await api.post("/auth/pin-login", { userId, pincode });
+        localStorage.setItem("ja_token", res.data.token);
+        setUser(res.data.user);
+        return res.data.user;
+      },
       logout() {
         localStorage.removeItem("ja_token");
         setUser(null);

@@ -15,7 +15,9 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && !error.config?.url?.includes("/auth/login")) {
+    const url = error.config?.url || "";
+    const isLoginAttempt = url.includes("/auth/login") || url.includes("/auth/pin-login");
+    if (error.response?.status === 401 && !isLoginAttempt) {
       localStorage.removeItem("ja_token");
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";

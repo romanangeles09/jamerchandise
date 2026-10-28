@@ -155,6 +155,18 @@ input:disabled {
   margin: 0;
 }
 
+.login-switch {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--copper-dark);
+  font-size: 13px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .alert,
 .success {
   padding: 10px 12px;

@@ -9,9 +9,14 @@ const emptyUser = {
   role: "Cashier",
   email: "",
   password: "",
+  pincode: "",
   access: ["pos", "cutoff", "account"],
   isActive: true,
 };
+
+function onlyDigits(value, maxLength) {
+  return String(value || "").replace(/\D/g, "").slice(0, maxLength);
+}
 
 export default function UserAccess() {
   const [users, setUsers] = useState([]);
@@ -19,6 +24,7 @@ export default function UserAccess() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showPincode, setShowPincode] = useState(false);
 
   async function load() {
     const res = await api.get("/users");
@@ -52,6 +58,7 @@ export default function UserAccess() {
         isActive: form.isActive !== false,
       };
       if (form.password) payload.password = form.password;
+      if (form.pincode) payload.pincode = form.pincode;
       if (form._id) {
         await api.put(`/users/${form._id}`, payload);
       } else {
@@ -83,7 +90,7 @@ export default function UserAccess() {
           <span className="eyebrow">Staff logins</span>
           <h1>User Access</h1>
         </div>
-        <button type="button" className="btn primary" onClick={() => { setShowPassword(false); setForm({ ...emptyUser, email: "", password: "" }); }}>
+        <button type="button" className="btn primary" onClick={() => { setShowPassword(false); setShowPincode(false); setForm({ ...emptyUser }); }}>
           Add user
         </button>
       </header>
@@ -129,6 +136,7 @@ export default function UserAccess() {
                       type="button"
                       onClick={() => {
                         setShowPassword(false);
+                        setShowPincode(false);
                         setForm({
                           _id: user.id,
                           name: user.name,
@@ -136,6 +144,7 @@ export default function UserAccess() {
                           role: user.role,
                           access: user.access || [],
                           password: "",
+                          pincode: "",
                           isActive: user.isActive !== false,
                         });
                       }}
@@ -212,6 +221,31 @@ export default function UserAccess() {
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </label>
+            <label>
+              PIN code
+              <div className="password-field">
+                <input
+                  name="staff-pincode"
+                  type={showPincode ? "text" : "password"}
+                  inputMode="numeric"
+                  pattern="[0-9]{8}"
+                  maxLength={8}
+                  value={form.pincode}
+                  onChange={(event) => setForm({ ...form, pincode: onlyDigits(event.target.value, 8) })}
+                  placeholder={form._id ? "Leave blank to keep current" : "8 digits"}
+                  autoComplete="off"
+                  required={!form._id}
+                />
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setShowPincode((open) => !open)}
+                  aria-label={showPincode ? "Hide PIN code" : "Show PIN code"}
+                >
+                  {showPincode ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </label>
