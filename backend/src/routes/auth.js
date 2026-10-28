@@ -72,6 +72,29 @@ router.post("/pin-login", async (req, res) => {
   }
 });
 
+router.post("/verify-superadmin-pin", protect, async (req, res) => {
+  try {
+    const pincode = String(req.body.pincode || "").trim();
+    if (!/^\d{8}$/.test(pincode)) {
+      return res.status(400).json({ message: "PIN code must be 8 digits." });
+    }
+
+    const admins = await User.find({ role: "SuperAdmin", isActive: true }).select("+pincode");
+    const withPin = admins.filter((admin) => admin.pincode);
+    if (!withPin.length) {
+      return res.status(400).json({ message: "Super Admin PIN is not set." });
+    }
+    for (const admin of withPin) {
+      if (await admin.comparePincode(pincode)) {
+        return res.json({ ok: true });
+      }
+    }
+    return res.status(400).json({ message: "Invalid Super Admin PIN." });
+  } catch (error) {
+    res.status(500).json({ message: "Unable to verify PIN." });
+  }
+});
+
 router.get("/me", protect, (req, res) => {
   res.json({ user: toUserResponse(req.user) });
 });

@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Minus, Plus, ScanBarcode, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Minus, Plus, ScanBarcode, Trash2 } from "lucide-react";
 import BarcodeScanner from "../components/BarcodeScanner";
+import { useAuth } from "../context/AuthContext";
 import api, { getErrorMessage } from "../lib/api";
 import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
+function onlyDigits(value, maxLength) {
+  return String(value || "").replace(/\D/g, "").slice(0, maxLength);
+}
+
 export default function POS() {
+  const { user } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState("");
@@ -24,6 +30,11 @@ export default function POS() {
   const [scanning, setScanning] = useState(false);
   const [scanNotice, setScanNotice] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [voidItem, setVoidItem] = useState(null);
+  const [voidPin, setVoidPin] = useState("");
+  const [showVoidPin, setShowVoidPin] = useState(false);
+  const [voidError, setVoidError] = useState("");
+  const [voidBusy, setVoidBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -147,6 +158,37 @@ export default function POS() {
         return { ...item, qty: Math.min(item.stock, Math.max(minQty, qty)) };
       })
     );
+  }
+
+  function removeCartItem(id) {
+    setCart((prev) => prev.filter((row) => row.product !== id));
+  }
+
+  function requestRemove(item) {
+    if (user?.role === "SuperAdmin") {
+      removeCartItem(item.product);
+      return;
+    }
+    setVoidItem(item);
+    setVoidPin("");
+    setVoidError("");
+    setShowVoidPin(false);
+  }
+
+  async function confirmVoid(event) {
+    event.preventDefault();
+    if (!voidItem) return;
+    setVoidBusy(true);
+    setVoidError("");
+    try {
+      await api.post("/auth/verify-superadmin-pin", { pincode: voidPin });
+      removeCartItem(voidItem.product);
+      setVoidItem(null);
+    } catch (err) {
+      setVoidError(getErrorMessage(err, "Invalid Super Admin PIN."));
+    } finally {
+      setVoidBusy(false);
+    }
   }
 
   function adjustQty(id, qty) {
@@ -318,7 +360,7 @@ export default function POS() {
                   <button type="button" onClick={() => updateQty(item.product, item.qty + 1)}>
                     <Plus size={14} />
                   </button>
-                  <button type="button" className="danger-text" onClick={() => setCart((prev) => prev.filter((row) => row.product !== item.product))}>
+                  <button type="button" className="danger-text" onClick={() => requestRemove(item)} aria-label="Void item">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -400,6 +442,50 @@ export default function POS() {
           onUpdateQty={adjustQty}
           onClose={() => { setScanning(false); setScanNotice(""); }}
         />
+      ) : null}
+
+      {voidItem ? (
+        <Modal title="Void item" onClose={() => !voidBusy && setVoidItem(null)}>
+          <form onSubmit={confirmVoid}>
+            <p>
+              Enter the Super Admin PIN to remove <strong>{voidItem.name}</strong> from the cart.
+            </p>
+            {voidError ? <div className="alert">{voidError}</div> : null}
+            <label>
+              Super Admin PIN
+              <div className="password-field">
+                <input
+                  type={showVoidPin ? "text" : "password"}
+                  inputMode="numeric"
+                  pattern="[0-9]{8}"
+                  maxLength={8}
+                  value={voidPin}
+                  onChange={(event) => setVoidPin(onlyDigits(event.target.value, 8))}
+                  autoComplete="off"
+                  placeholder="8 digits"
+                  autoFocus
+                  required
+                />
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setShowVoidPin((open) => !open)}
+                  aria-label={showVoidPin ? "Hide PIN code" : "Show PIN code"}
+                >
+                  {showVoidPin ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setVoidItem(null)} disabled={voidBusy}>
+                Cancel
+              </button>
+              <button type="submit" className="btn primary" disabled={voidBusy || voidPin.length !== 8}>
+                {voidBusy ? "Checking..." : "Remove item"}
+              </button>
+            </div>
+          </form>
+        </Modal>
       ) : null}
 
       {confirming ? (

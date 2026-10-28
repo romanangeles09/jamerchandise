@@ -3,3 +3,7 @@ dist
 .env
 .DS_Store
 *.log
+mobile/.dart_tool
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build

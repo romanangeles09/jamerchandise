@@ -16,7 +16,10 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const url = error.config?.url || "";
-    const isLoginAttempt = url.includes("/auth/login") || url.includes("/auth/pin-login");
+    const isLoginAttempt =
+      url.includes("/auth/login") ||
+      url.includes("/auth/pin-login") ||
+      url.includes("/auth/verify-superadmin-pin");
     if (error.response?.status === 401 && !isLoginAttempt) {
       localStorage.removeItem("ja_token");
       if (window.location.pathname !== "/login") {
