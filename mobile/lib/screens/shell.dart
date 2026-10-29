@@ -22,6 +22,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late String page;
   bool collapsed = false;
+  final posScreen = const PosScreen();
 
   @override
   void initState() {
@@ -45,7 +46,7 @@ class _AppShellState extends State<AppShell> {
     return switch (id) {
       'dashboard' => const DashboardScreen(),
       'transactions' => const TransactionsScreen(),
-      'pos' => const PosScreen(),
+      'pos' => posScreen,
       'cutoff' => const CutoffScreen(),
       'inventory' => const InventoryScreen(),
       'users' => const UsersScreen(),
@@ -233,7 +234,19 @@ class _AppShellState extends State<AppShell> {
               color: JaColors.paper,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 18, 16),
-                child: screenFor(page),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    TickerMode(
+                      enabled: page == 'pos',
+                      child: Offstage(
+                        offstage: page != 'pos',
+                        child: posScreen,
+                      ),
+                    ),
+                    if (page != 'pos') screenFor(page),
+                  ],
+                ),
               ),
             ),
           ),

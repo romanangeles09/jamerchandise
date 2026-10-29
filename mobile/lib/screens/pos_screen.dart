@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../api.dart';
 import '../auth.dart';
+import '../cart_store.dart';
 import '../models.dart';
 import '../money.dart';
 import '../theme.dart';
@@ -31,13 +32,21 @@ class _PosScreenState extends State<PosScreen> {
   String error = '';
   String scanNotice = '';
   bool busy = false;
+  bool cartReady = false;
 
   @override
   void initState() {
     super.initState();
     search.addListener(() => setState(() {}));
-    discountInput.addListener(() => setState(() {}));
-    paidInput.addListener(() => setState(() {}));
+    discountInput.addListener(() {
+      setState(() {});
+      rememberCart();
+    });
+    paidInput.addListener(() {
+      setState(() {});
+      rememberCart();
+    });
+    gcashTxnNo.addListener(rememberCart);
     load();
   }
 
@@ -59,6 +68,12 @@ class _PosScreenState extends State<PosScreen> {
         products = loaded[0] as List<Product>;
         categories = loaded[1] as List<Category>;
       });
+      if (!cartReady) {
+        await restoreCart();
+      } else {
+        setState(() => cart = syncCartWithProducts(cart));
+        await rememberCart();
+      }
     } catch (err) {
       if (!mounted) return;
       setState(() => error = err is ApiException ? err.message : 'Unable to load POS catalog.');
@@ -76,6 +91,66 @@ class _PosScreenState extends State<PosScreen> {
           product.barcode.toLowerCase().contains(term);
       return matchesCategory && matchesQuery;
     }).toList();
+  }
+
+  List<CartItem> syncCartWithProducts(List<CartItem> items) {
+    return items
+        .map((item) {
+          final product = products.where((row) => row.id == item.product).firstOrNull;
+          if (product == null) return item;
+          final minQty = saleType == 'wholesale' ? product.wholesaleMin : 1;
+          final qty = product.stock < minQty ? 0 : item.qty.clamp(minQty, product.stock);
+          return CartItem(
+            product: product.id,
+            name: product.name,
+            sku: product.sku,
+            unit: product.unit,
+            stock: product.stock,
+            retailPrice: product.retailPrice,
+            wholesalePrice: product.wholesalePrice,
+            wholesaleMinQty: product.wholesaleMinQty,
+            qty: qty,
+          );
+        })
+        .where((item) => item.qty > 0)
+        .toList();
+  }
+
+  Future<void> restoreCart() async {
+    final userId = context.read<AuthController>().user?.id ?? '';
+    if (userId.isEmpty) {
+      setState(() => cartReady = true);
+      return;
+    }
+    final saved = await CartStore.load(userId);
+    if (!mounted) return;
+    setState(() {
+      saleType = saved.saleType;
+      paymentMethod = saved.paymentMethod;
+      discountInput.text = saved.discount.isEmpty ? '0' : saved.discount;
+      paidInput.text = saved.amountPaid;
+      gcashTxnNo.text = saved.gcashTxnNo;
+      cart = syncCartWithProducts(saved.items);
+      cartReady = true;
+    });
+    await rememberCart();
+  }
+
+  Future<void> rememberCart() async {
+    if (!cartReady || !mounted) return;
+    final userId = context.read<AuthController>().user?.id ?? '';
+    if (userId.isEmpty) return;
+    await CartStore.save(
+      userId,
+      SavedCart(
+        items: cart,
+        saleType: saleType,
+        discount: discountInput.text,
+        amountPaid: paidInput.text,
+        paymentMethod: paymentMethod,
+        gcashTxnNo: gcashTxnNo.text,
+      ),
+    );
   }
 
   double priceOf(Product product) {
@@ -133,6 +208,7 @@ class _PosScreenState extends State<PosScreen> {
         cart = [...cart, CartItem.fromProduct(product, minQty)];
       }
     });
+    rememberCart();
     return true;
   }
 
@@ -166,10 +242,12 @@ class _PosScreenState extends State<PosScreen> {
         return item;
       }).toList();
     });
+    rememberCart();
   }
 
   void removeCartItem(String id) {
     setState(() => cart = cart.where((row) => row.product != id).toList());
+    rememberCart();
   }
 
   Future<void> requestRemove(CartItem item) async {
@@ -192,6 +270,7 @@ class _PosScreenState extends State<PosScreen> {
     final next = item.qty + delta;
     if (next < minQty) {
       setState(() => cart = cart.where((row) => row.product != id).toList());
+      rememberCart();
       return;
     }
     updateQty(id, next);
@@ -232,6 +311,7 @@ class _PosScreenState extends State<PosScreen> {
         paidInput.clear();
         gcashTxnNo.clear();
       });
+      await rememberCart();
       await load();
       if (!mounted) return;
       await showJaDialog(
@@ -276,7 +356,10 @@ class _PosScreenState extends State<PosScreen> {
                 trailing: SegmentedChoice(
                   value: saleType,
                   options: const [('retail', 'Retail'), ('wholesale', 'Wholesale')],
-                  onChanged: (value) => setState(() => saleType = value),
+                  onChanged: (value) {
+                    setState(() => saleType = value);
+                    rememberCart();
+                  },
                 ),
               ),
               Row(
@@ -464,6 +547,7 @@ class _PosScreenState extends State<PosScreen> {
                           onChanged: (value) {
                             setState(() => paymentMethod = value ?? 'cash');
                             if (value != 'gcash') gcashTxnNo.clear();
+                            rememberCart();
                           },
                         ),
                       ),

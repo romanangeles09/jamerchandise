@@ -3,6 +3,7 @@ import { Eye, EyeOff, Minus, Plus, ScanBarcode, Trash2 } from "lucide-react";
 import BarcodeScanner from "../components/BarcodeScanner";
 import { useAuth } from "../context/AuthContext";
 import api, { getErrorMessage } from "../lib/api";
+import { loadCartState, saveCartState } from "../lib/cartStorage";
 import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import { printReceipt, ReceiptActions } from "../lib/receipt";
@@ -14,16 +15,17 @@ function onlyDigits(value, maxLength) {
 
 export default function POS() {
   const { user } = useAuth();
+  const savedCart = loadCartState(user?.id);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [saleType, setSaleType] = useState("retail");
-  const [cart, setCart] = useState([]);
-  const [discount, setDiscount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [amountPaid, setAmountPaid] = useState("");
-  const [gcashTxnNo, setGcashTxnNo] = useState("");
+  const [saleType, setSaleType] = useState(savedCart.saleType);
+  const [cart, setCart] = useState(savedCart.cart);
+  const [discount, setDiscount] = useState(savedCart.discount);
+  const [paymentMethod, setPaymentMethod] = useState(savedCart.paymentMethod);
+  const [amountPaid, setAmountPaid] = useState(savedCart.amountPaid);
+  const [gcashTxnNo, setGcashTxnNo] = useState(savedCart.gcashTxnNo);
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -47,6 +49,39 @@ export default function POS() {
       })
       .catch((err) => setError(getErrorMessage(err, "Unable to load POS catalog.")));
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    saveCartState(user.id, { cart, saleType, discount, paymentMethod, amountPaid, gcashTxnNo });
+  }, [user?.id, cart, saleType, discount, paymentMethod, amountPaid, gcashTxnNo]);
+
+  useEffect(() => {
+    if (!products.length) return;
+    setCart((prev) => {
+      if (!prev.length) return prev;
+      const next = prev
+        .map((item) => {
+          const product = products.find((row) => row._id === item.product);
+          if (!product) return item;
+          const stock = Number(product.stock) || 0;
+          const minQty = saleType === "wholesale" ? wholesaleMin(product) : 1;
+          const qty = Math.min(stock, Math.max(minQty, Number(item.qty) || minQty));
+          return {
+            ...item,
+            name: product.name,
+            sku: product.sku,
+            unit: product.unit,
+            stock,
+            retailPrice: product.retailPrice,
+            wholesalePrice: product.wholesalePrice,
+            wholesaleMinQty: product.wholesaleMinQty,
+            qty,
+          };
+        })
+        .filter((item) => item.qty > 0);
+      return next;
+    });
+  }, [products, saleType]);
 
   const visibleProducts = useMemo(() => {
     const term = query.trim().toLowerCase();

@@ -547,4 +547,32 @@ class CartItem {
       qty: qty,
     );
   }
+
+  factory CartItem.fromJson(Map<String, dynamic> json) {
+    return CartItem(
+      product: jsonId(json['product'] ?? json),
+      name: '${json['name'] ?? ''}',
+      sku: '${json['sku'] ?? ''}',
+      unit: '${json['unit'] ?? 'pc'}',
+      stock: jsonInt(json['stock']),
+      retailPrice: jsonNum(json['retailPrice']),
+      wholesalePrice: jsonNumOrNull(json['wholesalePrice']),
+      wholesaleMinQty: jsonIntOrNull(json['wholesaleMinQty']),
+      qty: jsonInt(json['qty']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'product': product,
+      'name': name,
+      'sku': sku,
+      'unit': unit,
+      'stock': stock,
+      'retailPrice': retailPrice,
+      'wholesalePrice': wholesalePrice,
+      'wholesaleMinQty': wholesaleMinQty,
+      'qty': qty,
+    };
+  }
 }
