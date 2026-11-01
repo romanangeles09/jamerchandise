@@ -4,7 +4,6 @@ class AppConfig {
   static String get apiUrl {
     const fromEnv = String.fromEnvironment('API_URL');
     if (fromEnv.isNotEmpty) return fromEnv;
-    if (kDebugMode) return 'http://localhost:5000/api';
     if (kIsWeb) {
       final host = Uri.base.host;
       if (host == 'localhost' || host == '127.0.0.1') {

@@ -40,9 +40,11 @@ dependencies:
   google_fonts: ^9.0.0
   intl: ^0.20.3
   image_picker: ^1.2.4
-  mobile_scanner: ^7.4.2
+  barcode: ^2.2.9
   pdf: ^3.11.3
   printing: ^5.14.2
+  print_bluetooth_thermal: ^1.2.5
+  esc_pos_utils_plus: ^2.0.4
 
 dev_dependencies:
   flutter_test:

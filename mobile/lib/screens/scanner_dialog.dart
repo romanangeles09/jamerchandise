@@ -1,7 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:flutter/services.dart';
 
 import '../models.dart';
 import '../money.dart';
@@ -18,7 +16,7 @@ class ScanResult {
 
 Future<void> openBarcodeScanner({
   required BuildContext context,
-  required ScanResult Function(String code) onScan,
+  required Future<ScanResult> Function(String code) onScan,
   required List<CartItem> Function() cartItems,
   required double Function(CartItem item) unitPrice,
   required void Function(String id, int delta) onAdjustQty,
@@ -49,7 +47,7 @@ class _ScannerBody extends StatefulWidget {
     required this.onAdjustQty,
   });
 
-  final ScanResult Function(String code) onScan;
+  final Future<ScanResult> Function(String code) onScan;
   final List<CartItem> Function() cartItems;
   final double Function(CartItem item) unitPrice;
   final void Function(String id, int delta) onAdjustQty;
@@ -60,49 +58,83 @@ class _ScannerBody extends StatefulWidget {
 
 class _ScannerBodyState extends State<_ScannerBody> {
   final manual = TextEditingController();
-  late final MobileScannerController controller;
-  StreamSubscription<Object>? subscription;
+  final focus = FocusNode();
   String lastCode = '';
   DateTime lastAt = DateTime.fromMillisecondsSinceEpoch(0);
   String error = '';
-  bool torchOn = false;
+  String scanBuffer = '';
+  DateTime lastScanKey = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
     super.initState();
-    controller = MobileScannerController(
-      facing: CameraFacing.back,
-      detectionSpeed: DetectionSpeed.unrestricted,
-      cameraResolution: const Size(1920, 1080),
-    );
-    subscription = controller.barcodes.listen(_onCapture, onError: (_) {});
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
   }
 
   @override
   void dispose() {
-    subscription?.cancel();
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     manual.dispose();
-    controller.dispose();
+    focus.dispose();
     super.dispose();
   }
 
-  void _onCapture(BarcodeCapture capture) {
-    for (final barcode in capture.barcodes) {
-      final value = (barcode.rawValue ?? barcode.displayValue ?? '').trim();
-      if (value.isNotEmpty) {
-        applyCode(value);
-        return;
-      }
+  bool _onHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (focus.hasFocus) return false;
+
+    final now = DateTime.now();
+    if (now.difference(lastScanKey).inMilliseconds > 400) {
+      scanBuffer = '';
     }
+    lastScanKey = now;
+
+    if (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      final code = scanBuffer.trim();
+      scanBuffer = '';
+      if (code.isEmpty) return false;
+      applyCode(code);
+      return true;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.backspace) {
+      if (scanBuffer.isEmpty) return false;
+      scanBuffer = scanBuffer.substring(0, scanBuffer.length - 1);
+      return true;
+    }
+
+    final char = _keyChar(event);
+    if (char == null) return false;
+    scanBuffer += char;
+    return true;
   }
 
-  void applyCode(String code) {
+  String? _keyChar(KeyEvent event) {
+    final character = event.character;
+    if (character != null && character.isNotEmpty && character != '\n' && character != '\r') {
+      return character;
+    }
+    final label = event.logicalKey.keyLabel;
+    if (label.length == 1) return label;
+    return null;
+  }
+
+  void submitManual() {
+    final value = manual.text.trim();
+    if (value.isEmpty) return;
+    applyCode(value);
+    manual.clear();
+    focus.requestFocus();
+  }
+
+  Future<void> applyCode(String code) async {
     if (!mounted) return;
     final now = DateTime.now();
     if (code == lastCode && now.difference(lastAt).inMilliseconds < 1600) return;
     lastCode = code;
     lastAt = now;
-    final result = widget.onScan(code);
+    final result = await widget.onScan(code);
+    if (!mounted) return;
     setState(() {
       error = result.added ? '' : (result.message.isEmpty ? 'No product found for $code.' : result.message);
     });
@@ -111,106 +143,47 @@ class _ScannerBodyState extends State<_ScannerBody> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    return SizedBox(
-      width: size.width * 0.86,
-      height: size.height * 0.82,
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: 420, maxHeight: size.height * 0.82),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 7,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: Text('Scan barcode', style: Theme.of(context).textTheme.titleLarge)),
-                      IconButton(
-                        onPressed: () async {
-                          await controller.toggleTorch();
-                          if (mounted) setState(() => torchOn = !torchOn);
-                        },
-                        icon: Icon(torchOn ? Icons.flash_on : Icons.flash_off_outlined),
-                      ),
-                      IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: ColoredBox(
-                        color: JaColors.ink,
-                        child: MobileScanner(
-                          controller: controller,
-                          fit: BoxFit.contain,
-                          onDetect: _onCapture,
-                          errorBuilder: (context, error) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text(
-                                  'Camera could not start. Type the barcode on the right.',
-                                  style: TextStyle(color: Colors.white),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+            Row(
+              children: [
+                Expanded(child: Text('Scan barcode', style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+              ],
+            ),
+            const Text(
+              'Scan with the USB barcode scanner, or type a barcode or SKU. Items appear below.',
+              style: TextStyle(color: JaColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            if (lastCode.isNotEmpty)
+              Text('Last read: $lastCode', style: const TextStyle(fontWeight: FontWeight.w700)),
+            if (error.isNotEmpty) ...[const SizedBox(height: 8), JaAlert(error)],
+            const SizedBox(height: 12),
+            _cartList(),
+            FieldLabel(
+              label: 'Barcode or SKU',
+              child: TextField(
+                controller: manual,
+                focusNode: focus,
+                autofocus: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(),
+                onSubmitted: (_) => submitManual(),
               ),
             ),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: 320,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 40),
-                  const Text(
-                    'Hold the barcode inside the camera. The last read value appears below.',
-                    style: TextStyle(color: JaColors.muted, fontSize: 13),
-                  ),
-                  const SizedBox(height: 12),
-                  if (lastCode.isNotEmpty)
-                    Text('Last read: $lastCode', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  if (error.isNotEmpty) ...[const SizedBox(height: 8), JaAlert(error)],
-                  const SizedBox(height: 12),
-                  Expanded(child: _cartList()),
-                  FieldLabel(
-                    label: 'Barcode or SKU',
-                    child: TextField(
-                      controller: manual,
-                      decoration: const InputDecoration(),
-                      onSubmitted: (value) {
-                        if (value.trim().isEmpty) return;
-                        applyCode(value.trim());
-                        manual.clear();
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  JaButton(
-                    label: 'Add',
-                    primary: true,
-                    expanded: true,
-                    onPressed: () {
-                      final value = manual.text.trim();
-                      if (value.isEmpty) return;
-                      applyCode(value);
-                      manual.clear();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  JaButton(label: 'Done', expanded: true, onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-            ),
+            const SizedBox(height: 10),
+            JaButton(label: 'Add', primary: true, expanded: true, onPressed: submitManual),
+            const SizedBox(height: 8),
+            JaButton(label: 'Done', expanded: true, onPressed: () => Navigator.pop(context)),
           ],
         ),
       ),
@@ -220,43 +193,50 @@ class _ScannerBodyState extends State<_ScannerBody> {
   Widget _cartList() {
     final items = widget.cartItems();
     if (items.isEmpty) {
-      return const Text('Scanned items will show here.', style: TextStyle(color: JaColors.muted, fontSize: 13));
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: Text('Scanned items will show here.', style: TextStyle(color: JaColors.muted, fontSize: 13)),
+      );
     }
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: items.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                  Text(
-                    '${peso(widget.unitPrice(item))} / ${item.unit}',
-                    style: const TextStyle(color: JaColors.muted, fontSize: 12),
-                  ),
-                ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 80, maxHeight: 240),
+      child: ListView.separated(
+        padding: const EdgeInsets.only(bottom: 12),
+        shrinkWrap: true,
+        itemCount: items.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                    Text(
+                      '${peso(widget.unitPrice(item))} / ${item.unit}',
+                      style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            _qtyButton(Icons.remove, () {
-              widget.onAdjustQty(item.product, -1);
-              setState(() {});
-            }),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text('${item.qty}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-            _qtyButton(Icons.add, () {
-              widget.onAdjustQty(item.product, 1);
-              setState(() {});
-            }),
-          ],
-        );
-      },
+              _qtyButton(Icons.remove, () {
+                widget.onAdjustQty(item.product, -1);
+                setState(() {});
+              }),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text('${item.qty}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+              _qtyButton(Icons.add, () {
+                widget.onAdjustQty(item.product, 1);
+                setState(() {});
+              }),
+            ],
+          );
+        },
+      ),
     );
   }
 

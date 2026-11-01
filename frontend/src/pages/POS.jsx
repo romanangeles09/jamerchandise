@@ -90,6 +90,7 @@ export default function POS() {
       const matchesQuery =
         !term ||
         product.name.toLowerCase().includes(term) ||
+        String(product.alias || "").toLowerCase().includes(term) ||
         product.sku.toLowerCase().includes(term) ||
         product.barcode.toLowerCase().includes(term);
       return matchesCategory && matchesQuery;
@@ -120,13 +121,34 @@ export default function POS() {
     return saleType === "wholesale" && hasWholesale(product) ? product.wholesalePrice : product.retailPrice;
   }
 
-  function findByCode(code) {
-    const term = String(code || "").trim().toLowerCase();
+  function normalizeCode(value) {
+    return String(value || "").trim().toLowerCase().replace(/[\s\-_]/g, "");
+  }
+
+  function digitCore(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    return digits.replace(/^0+/, "");
+  }
+
+  function codesMatch(scanned, stored) {
+    if (!String(stored || "").trim()) return false;
+    const compactScanned = normalizeCode(scanned);
+    const compactStored = normalizeCode(stored);
+    if (!compactScanned || !compactStored) return false;
+    if (compactScanned === compactStored) return true;
+    const scannedDigits = digitCore(scanned);
+    const storedDigits = digitCore(stored);
+    return Boolean(scannedDigits) && scannedDigits === storedDigits;
+  }
+
+  function findByCode(code, catalog = products) {
+    const term = normalizeCode(code);
     if (!term) return null;
-    return products.find(
+    return catalog.find(
       (product) =>
-        product.barcode?.toLowerCase() === term ||
-        product.sku.toLowerCase() === term
+        codesMatch(code, product.barcode) ||
+        codesMatch(code, product.sku) ||
+        codesMatch(code, product.alias)
     );
   }
 
@@ -170,8 +192,17 @@ export default function POS() {
     return true;
   }
 
-  function addByCode(code) {
-    const product = findByCode(code);
+  async function addByCode(code) {
+    let product = findByCode(code);
+    if (!product) {
+      try {
+        const [{ data: latest }] = await Promise.all([api.get("/products", { params: { active: true } })]);
+        setProducts(latest);
+        product = findByCode(code, latest);
+      } catch (_err) {
+        product = null;
+      }
+    }
     if (!product) {
       setError(`No product found for ${code}.`);
       setScanNotice("");
@@ -324,7 +355,18 @@ export default function POS() {
               }}
               placeholder="Search name, SKU, or barcode"
             />
-            <button type="button" className="btn scan-btn" onClick={() => { setScanning(true); setScanNotice(""); setError(""); }}>
+            <button
+              type="button"
+              className="btn scan-btn"
+              onClick={() => {
+                setScanning(true);
+                setScanNotice("");
+                setError("");
+                api.get("/products", { params: { active: true } })
+                  .then((res) => setProducts(res.data))
+                  .catch(() => {});
+              }}
+            >
               <ScanBarcode size={18} />
               Scan barcode
             </button>

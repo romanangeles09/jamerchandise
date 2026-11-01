@@ -101,6 +101,7 @@ class Product {
   const Product({
     required this.id,
     required this.name,
+    this.alias = '',
     required this.sku,
     required this.barcode,
     required this.unit,
@@ -119,6 +120,7 @@ class Product {
 
   final String id;
   final String name;
+  final String alias;
   final String sku;
   final String barcode;
   final NamedRef? category;
@@ -141,6 +143,7 @@ class Product {
     return Product(
       id: jsonId(json),
       name: '${json['name'] ?? ''}',
+      alias: '${json['alias'] ?? ''}',
       sku: '${json['sku'] ?? ''}',
       barcode: '${json['barcode'] ?? ''}',
       category: json['category'] == null ? null : NamedRef.fromJson(json['category']),

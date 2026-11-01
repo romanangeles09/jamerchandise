@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const Category = require("../models/Category");
 const Product = require("../models/Product");
 
@@ -13,6 +14,21 @@ function derivedCostPrice(wholesalePrice, wholesaleMinQty) {
   const qty = wholesaleMinQty == null ? 1 : Number(wholesaleMinQty);
   if (!Number.isFinite(qty) || qty < 1) return null;
   return Number((Number(wholesalePrice) * qty).toFixed(2));
+}
+
+function generateCode128Value() {
+  return `${crypto.randomInt(1, 10)}${Array.from({ length: 12 }, () => crypto.randomInt(0, 10)).join("")}`;
+}
+
+async function nextCode128Barcode() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const code = generateCode128Value();
+    const exists = await Product.exists({ barcode: code });
+    if (!exists) return code;
+  }
+  const error = new Error("Unable to generate a unique barcode.");
+  error.status = 500;
+  throw error;
 }
 
 async function nextSkuForCategory(categoryId) {
@@ -43,20 +59,39 @@ async function applyProductDefaults(data, existing) {
     if (existing?.sku) data.sku = existing.sku;
     else if (data.category) data.sku = await nextSkuForCategory(data.category);
   }
-  if (data.costPrice == null) {
-    data.costPrice = derivedCostPrice(data.wholesalePrice, data.wholesaleMinQty);
+  data.sku = String(data.sku || "").trim().toUpperCase();
+  if (!data.barcode) {
+    data.barcode = existing?.barcode || (await nextCode128Barcode());
   }
+  data.costPrice = derivedCostPrice(data.wholesalePrice, data.wholesaleMinQty);
   return data;
 }
 
-async function saveProductWithSkuRetry(product, { regenerateSku } = {}) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+function duplicateField(error) {
+  return Object.keys(error.keyPattern || error.keyValue || {})[0] || "sku";
+}
+
+async function saveProductWithSkuRetry(product, { regenerateSku, regenerateBarcode } = {}) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
       await product.save();
       return;
     } catch (error) {
-      if (error.code !== 11000 || !regenerateSku) throw error;
-      product.sku = await nextSkuForCategory(product.category);
+      if (error.code !== 11000) throw error;
+      const field = duplicateField(error);
+      if (field === "sku" && regenerateSku) {
+        product.sku = await nextSkuForCategory(product.category);
+        continue;
+      }
+      if (field === "barcode" && regenerateBarcode) {
+        product.barcode = await nextCode128Barcode();
+        continue;
+      }
+      const conflict = new Error(
+        field === "barcode" ? "A product with that barcode already exists." : "A product with that SKU already exists."
+      );
+      conflict.status = 400;
+      throw conflict;
     }
   }
   const conflict = new Error("A product with that SKU already exists.");
@@ -67,6 +102,8 @@ async function saveProductWithSkuRetry(product, { regenerateSku } = {}) {
 module.exports = {
   applyProductDefaults,
   derivedCostPrice,
+  generateCode128Value,
+  nextCode128Barcode,
   nextSkuForCategory,
   saveProductWithSkuRetry,
   skuPrefix,

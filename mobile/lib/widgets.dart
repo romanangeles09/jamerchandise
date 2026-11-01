@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'bluetooth_printer.dart';
 import 'money.dart';
 import 'models.dart';
 import 'receipt.dart';
@@ -564,10 +565,10 @@ class TicketBody extends StatelessWidget {
           onPressed: () async {
             try {
               await printSaleReceipt(sale);
-            } catch (_) {
+            } catch (err) {
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Unable to print receipt.')),
+                SnackBar(content: Text(err is PrinterException ? err.message : 'Unable to print receipt.')),
               );
             }
           },

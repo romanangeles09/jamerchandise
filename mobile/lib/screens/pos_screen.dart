@@ -87,6 +87,7 @@ class _PosScreenState extends State<PosScreen> {
       final matchesQuery =
           term.isEmpty ||
           product.name.toLowerCase().contains(term) ||
+          product.alias.toLowerCase().contains(term) ||
           product.sku.toLowerCase().contains(term) ||
           product.barcode.toLowerCase().contains(term);
       return matchesCategory && matchesQuery;
@@ -171,17 +172,30 @@ class _PosScreenState extends State<PosScreen> {
     return value.trim().toLowerCase().replaceAll(RegExp(r'[\s\-_]'), '');
   }
 
+  String digitCore(String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    return digits.replaceFirst(RegExp(r'^0+'), '');
+  }
+
+  bool codesMatch(String scanned, String stored) {
+    if (stored.trim().isEmpty) return false;
+    final compactScanned = normalizeCode(scanned);
+    final compactStored = normalizeCode(stored);
+    if (compactScanned.isEmpty || compactStored.isEmpty) return false;
+    if (compactScanned == compactStored) return true;
+    final scannedDigits = digitCore(scanned);
+    final storedDigits = digitCore(stored);
+    return scannedDigits.isNotEmpty && scannedDigits == storedDigits;
+  }
+
   Product? findByCode(String code) {
-    final term = code.trim().toLowerCase();
     final compact = normalizeCode(code);
     if (compact.isEmpty) return null;
     for (final product in products) {
-      final barcode = product.barcode.toLowerCase();
-      final sku = product.sku.toLowerCase();
-      if (barcode == term ||
-          sku == term ||
-          normalizeCode(product.barcode) == compact ||
-          normalizeCode(product.sku) == compact) {
+      if (codesMatch(code, product.barcode) ||
+          codesMatch(code, product.sku) ||
+          (product.alias.isNotEmpty && codesMatch(code, product.alias))) {
         return product;
       }
     }
@@ -212,8 +226,12 @@ class _PosScreenState extends State<PosScreen> {
     return true;
   }
 
-  ScanResult addByCode(String code) {
-    final product = findByCode(code);
+  Future<ScanResult> addByCode(String code) async {
+    var product = findByCode(code);
+    if (product == null) {
+      await load();
+      product = findByCode(code);
+    }
     if (product == null) {
       setState(() {
         error = 'No product found for $code.';
@@ -221,14 +239,15 @@ class _PosScreenState extends State<PosScreen> {
       });
       return ScanResult(code: code, added: false, message: 'No product found for $code.');
     }
-    final added = addProduct(product);
+    final match = product;
+    final added = addProduct(match);
     if (added) {
       setState(() {
-        scanNotice = 'Added ${product.name}';
+        scanNotice = 'Added ${match.name}';
         error = '';
         search.clear();
       });
-      return ScanResult(code: code, added: true, message: 'Added ${product.name}');
+      return ScanResult(code: code, added: true, message: 'Added ${match.name}');
     }
     return ScanResult(code: code, added: false, message: error.isEmpty ? 'Could not add $code.' : error);
   }
@@ -331,6 +350,8 @@ class _PosScreenState extends State<PosScreen> {
       scanNotice = '';
       error = '';
     });
+    await load();
+    if (!mounted) return;
     await openBarcodeScanner(
       context: context,
       onScan: addByCode,

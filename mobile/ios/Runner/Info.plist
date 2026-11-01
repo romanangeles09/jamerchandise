@@ -53,10 +53,12 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
-	<key>NSCameraUsageDescription</key>
-	<string>JA Merchandise uses the camera to scan product barcodes at the register.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>JA Merchandise uses photos for product and profile images.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>JA Merchandise connects to the GOOJPRT Bluetooth printer to print receipts and barcode labels.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>JA Merchandise connects to the GOOJPRT Bluetooth printer to print receipts and barcode labels.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationLandscapeLeft</string>

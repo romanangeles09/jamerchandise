@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const productSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    alias: { type: String, default: "", trim: true },
     sku: { type: String, required: true, unique: true, trim: true, uppercase: true },
     barcode: { type: String, default: "", trim: true },
     category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
@@ -26,5 +27,6 @@ const productSchema = new mongoose.Schema(
 );
 
 productSchema.index({ name: "text", sku: "text", barcode: "text" });
+productSchema.index({ barcode: 1 }, { unique: true, partialFilterExpression: { barcode: { $gt: "" } } });
 
 module.exports = mongoose.model("Product", productSchema);

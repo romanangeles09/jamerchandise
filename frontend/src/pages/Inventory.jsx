@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { getErrorMessage } from "../lib/api";
+import Code128 from "../components/Code128";
+import { printBarcodeLabel } from "../lib/barcodeLabel";
+import { nextCode128Barcode } from "../lib/code128";
 import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import Modal from "../components/Modal";
 
 const emptyProduct = {
   name: "",
+  alias: "",
   sku: "",
   barcode: "",
   category: "",
@@ -17,11 +21,6 @@ const emptyProduct = {
   stock: "",
   reorderLevel: 10,
   isActive: true,
-  imageFile: null,
-  previewUrl: "",
-  removeImage: false,
-  skuManual: false,
-  costManual: false,
 };
 
 function skuPrefix(categoryName) {
@@ -82,7 +81,9 @@ export default function Inventory() {
     return products.filter(
       (product) =>
         product.name.toLowerCase().includes(term) ||
+        String(product.alias || "").toLowerCase().includes(term) ||
         product.sku.toLowerCase().includes(term) ||
+        String(product.barcode || "").toLowerCase().includes(term) ||
         product.category?.name.toLowerCase().includes(term)
     );
   }, [products, query]);
@@ -94,6 +95,7 @@ export default function Inventory() {
     try {
       const form = new FormData();
       form.append("name", productForm.name);
+      form.append("alias", productForm.alias || "");
       form.append("sku", productForm.sku);
       form.append("barcode", productForm.barcode || "");
       form.append("category", productForm.category);
@@ -105,8 +107,6 @@ export default function Inventory() {
       form.append("stock", String(Number(productForm.stock || 0)));
       form.append("reorderLevel", String(Number(productForm.reorderLevel || 10)));
       form.append("isActive", productForm.isActive !== false ? "true" : "false");
-      if (productForm.imageFile) form.append("image", productForm.imageFile);
-      if (productForm.removeImage) form.append("removeImage", "true");
       if (productForm._id) {
         await api.put(`/products/${productForm._id}`, form);
       } else {
@@ -171,10 +171,12 @@ export default function Inventory() {
               onClick={() => {
                 const category = categories[0]?._id || "";
                 setError("");
+                const sku = nextSku(category, products, categories);
                 setProductForm({
                   ...emptyProduct,
                   category,
-                  sku: nextSku(category, products, categories),
+                  sku,
+                  barcode: nextCode128Barcode(products),
                 });
               }}
             >
@@ -257,15 +259,12 @@ export default function Inventory() {
                           setProductForm({
                             ...emptyProduct,
                             ...product,
+                            alias: product.alias || "",
                             category: product.category?._id || product.category,
                             wholesalePrice: product.wholesalePrice ?? "",
                             wholesaleMinQty: product.wholesaleMinQty ?? "",
-                            costPrice: product.costPrice ?? "",
-                            imageFile: null,
-                            previewUrl: productImageSrc(product),
-                            removeImage: false,
-                            skuManual: true,
-                            costManual: product.costPrice != null && product.costPrice !== "",
+                            costPrice: derivedCost(product.wholesalePrice ?? "", product.wholesaleMinQty ?? ""),
+                            barcode: product.barcode || nextCode128Barcode(products),
                           });
                         }}
                       >
@@ -318,82 +317,57 @@ export default function Inventory() {
         <Modal title={productForm._id ? "Edit product" : "New product"} onClose={() => setProductForm(null)}>
           <form className="form-grid" onSubmit={saveProduct}>
             {error ? <div className="alert full">{error}</div> : null}
-            <label className="full">
-              Product image
-              <div className="image-picker">
-                {productForm.previewUrl && !productForm.removeImage ? (
-                  <img src={productForm.previewUrl} alt="" className="image-preview" />
-                ) : (
-                  <span className="image-preview placeholder">No photo</span>
-                )}
-                <div>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      setProductForm({
-                        ...productForm,
-                        imageFile: file,
-                        previewUrl: URL.createObjectURL(file),
-                        removeImage: false,
-                      });
-                    }}
-                  />
-                  <small className="hint">JPG, PNG, WEBP, or GIF up to 2 MB.</small>
-                  {productForm.previewUrl && !productForm.removeImage ? (
-                    <button
-                      type="button"
-                      className="danger-text"
-                      onClick={() =>
-                        setProductForm({
-                          ...productForm,
-                          imageFile: null,
-                          previewUrl: "",
-                          removeImage: true,
-                        })
-                      }
-                    >
-                      Remove photo
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </label>
             <label>
               Name
               <input value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} required />
             </label>
             <label>
-              SKU
+              Alias
               <input
-                value={productForm.sku}
-                placeholder="Auto"
-                onChange={(event) => {
-                  const sku = event.target.value;
-                  setProductForm({
-                    ...productForm,
-                    sku: sku.trim() ? sku : nextSku(productForm.category, products, categories),
-                    skuManual: Boolean(sku.trim()),
-                  });
-                }}
+                value={productForm.alias}
+                onChange={(event) => setProductForm({ ...productForm, alias: event.target.value })}
+                placeholder="Optional"
               />
             </label>
             <label>
-              Barcode
-              <input value={productForm.barcode} onChange={(event) => setProductForm({ ...productForm, barcode: event.target.value })} />
+              SKU
+              <input value={productForm.sku} placeholder="Auto" disabled />
             </label>
+            <div className="full">
+              <span className="field-caption">Barcode</span>
+              <div className="barcode-card">
+                <Code128 value={productForm.barcode} />
+              </div>
+              <button
+                type="button"
+                className="btn full barcode-print-btn"
+                disabled={!productForm.barcode}
+                onClick={() =>
+                  printBarcodeLabel({
+                    name: productForm.name,
+                    sku: productForm.sku,
+                    barcode: productForm.barcode,
+                  })
+                }
+              >
+                Print barcode
+              </button>
+            </div>
             <label>
               Category
               <select
                 value={productForm.category}
                 onChange={(event) => {
                   const category = event.target.value;
+                  if (productForm._id) {
+                    setProductForm({ ...productForm, category });
+                    return;
+                  }
+                  const sku = nextSku(category, products, categories);
                   setProductForm({
                     ...productForm,
                     category,
-                    sku: productForm.skuManual ? productForm.sku : nextSku(category, products, categories),
+                    sku,
                   });
                 }}
                 required
@@ -430,9 +404,7 @@ export default function Inventory() {
                   setProductForm({
                     ...productForm,
                     wholesalePrice,
-                    costPrice: productForm.costManual
-                      ? productForm.costPrice
-                      : derivedCost(wholesalePrice, productForm.wholesaleMinQty),
+                    costPrice: derivedCost(wholesalePrice, productForm.wholesaleMinQty),
                   });
                 }}
                 placeholder="Optional"
@@ -449,9 +421,7 @@ export default function Inventory() {
                   setProductForm({
                     ...productForm,
                     wholesaleMinQty,
-                    costPrice: productForm.costManual
-                      ? productForm.costPrice
-                      : derivedCost(productForm.wholesalePrice, wholesaleMinQty),
+                    costPrice: derivedCost(productForm.wholesalePrice, wholesaleMinQty),
                   });
                 }}
                 placeholder="Optional"
@@ -459,21 +429,7 @@ export default function Inventory() {
             </label>
             <label>
               Cost
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={productForm.costPrice}
-                onChange={(event) => {
-                  const costPrice = event.target.value;
-                  setProductForm({
-                    ...productForm,
-                    costPrice: costPrice.trim() ? costPrice : derivedCost(productForm.wholesalePrice, productForm.wholesaleMinQty),
-                    costManual: Boolean(costPrice.trim()),
-                  });
-                }}
-                placeholder="Auto"
-              />
+              <input type="number" min="0" step="0.01" value={productForm.costPrice} placeholder="Auto" disabled />
             </label>
             <label className="check">
               <input type="checkbox" checked={productForm.isActive} onChange={(event) => setProductForm({ ...productForm, isActive: event.target.checked })} />

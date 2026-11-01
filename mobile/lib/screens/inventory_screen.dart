@@ -1,10 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../api.dart';
+import '../barcode_label.dart';
+import '../bluetooth_printer.dart';
+import '../code128.dart';
 import '../models.dart';
 import '../money.dart';
 import '../theme.dart';
@@ -85,7 +85,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (term.isEmpty) return products;
     return products.where((product) {
       return product.name.toLowerCase().contains(term) ||
+          product.alias.toLowerCase().contains(term) ||
           product.sku.toLowerCase().contains(term) ||
+          product.barcode.toLowerCase().contains(term) ||
           (product.category?.name.toLowerCase().contains(term) ?? false);
     }).toList();
   }
@@ -290,10 +292,15 @@ class _ProductForm extends StatefulWidget {
 class _ProductFormState extends State<_ProductForm> {
   late String category = widget.product?.category?.id ?? widget.categories.firstOrNull?.id ?? '';
   late final name = TextEditingController(text: widget.product?.name ?? '');
+  late final alias = TextEditingController(text: widget.product?.alias ?? '');
   late final sku = TextEditingController(
     text: widget.product?.sku ?? nextSku(category, widget.products, widget.categories),
   );
-  late final barcode = TextEditingController(text: widget.product?.barcode ?? '');
+  late final barcode = TextEditingController(
+    text: (widget.product?.barcode ?? '').isNotEmpty
+        ? widget.product!.barcode
+        : nextCode128Barcode(widget.products.map((item) => item.barcode)),
+  );
   late final unit = TextEditingController(text: widget.product?.unit ?? 'pc');
   late final retail = TextEditingController(text: widget.product == null ? '' : '${widget.product!.retailPrice}');
   late final wholesale = TextEditingController(
@@ -303,38 +310,32 @@ class _ProductFormState extends State<_ProductForm> {
     text: widget.product?.wholesaleMinQty == null ? '' : '${widget.product!.wholesaleMinQty}',
   );
   late final cost = TextEditingController(
-    text: widget.product?.costPrice == null
-        ? derivedCost(
-            widget.product?.wholesalePrice == null ? '' : '${widget.product!.wholesalePrice}',
-            widget.product?.wholesaleMinQty == null ? '' : '${widget.product!.wholesaleMinQty}',
-          )
-        : '${widget.product!.costPrice}',
+    text: derivedCost(
+      widget.product?.wholesalePrice == null ? '' : '${widget.product!.wholesalePrice}',
+      widget.product?.wholesaleMinQty == null ? '' : '${widget.product!.wholesaleMinQty}',
+    ),
   );
   late final stock = TextEditingController(text: widget.product == null ? '' : '${widget.product!.stock}');
   bool isActive = true;
-  File? imageFile;
-  String previewUrl = '';
-  bool removeImage = false;
   bool saving = false;
   String error = '';
-  bool skuManual = false;
-  bool costManual = false;
 
   @override
   void initState() {
     super.initState();
     isActive = widget.product?.isActive ?? true;
-    previewUrl = widget.product?.imageUrl ?? '';
-    skuManual = widget.product != null;
-    costManual = widget.product?.costPrice != null;
     wholesale.addListener(_syncCost);
     wholesaleMin.addListener(_syncCost);
   }
 
   void _syncCost() {
-    if (costManual) return;
     final next = derivedCost(wholesale.text, wholesaleMin.text);
     if (cost.text != next) cost.text = next;
+  }
+
+  void _syncSku() {
+    if (widget.product != null) return;
+    sku.text = nextSku(category, widget.products, widget.categories);
   }
 
   @override
@@ -342,6 +343,7 @@ class _ProductFormState extends State<_ProductForm> {
     wholesale.removeListener(_syncCost);
     wholesaleMin.removeListener(_syncCost);
     name.dispose();
+    alias.dispose();
     sku.dispose();
     barcode.dispose();
     unit.dispose();
@@ -362,6 +364,7 @@ class _ProductFormState extends State<_ProductForm> {
       await context.read<ApiClient>().saveProduct(
         {
           'name': name.text,
+          'alias': alias.text,
           'sku': sku.text,
           'barcode': barcode.text,
           'category': category,
@@ -373,10 +376,8 @@ class _ProductFormState extends State<_ProductForm> {
           'stock': stock.text.isEmpty ? '0' : stock.text,
           'reorderLevel': '${widget.product?.reorderLevel ?? 10}',
           'isActive': isActive ? 'true' : 'false',
-          if (removeImage) 'removeImage': 'true',
         },
         id: widget.product?.id,
-        image: imageFile,
       );
       await widget.onSaved();
       if (mounted) Navigator.pop(context);
@@ -394,80 +395,53 @@ class _ProductFormState extends State<_ProductForm> {
         if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 12)],
         Row(
           children: [
-            if (imageFile != null && !removeImage)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.file(imageFile!, width: 96, height: 96, fit: BoxFit.cover),
-              )
-            else
-              ProductPhoto(
-                name: name.text,
-                hasImage: previewUrl.isNotEmpty && !removeImage,
-                imageUrl: previewUrl,
-                size: 96,
-                radius: 16,
-              ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  JaButton(
-                    label: 'Choose photo',
-                    onPressed: () async {
-                      final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
-                      if (picked == null) return;
-                      setState(() {
-                        imageFile = File(picked.path);
-                        previewUrl = picked.path;
-                        removeImage = false;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  const Text('JPG, PNG, WEBP, or GIF up to 2 MB.', style: TextStyle(color: JaColors.muted, fontSize: 12)),
-                  if (previewUrl.isNotEmpty && !removeImage)
-                    TextButton(
-                      onPressed: () => setState(() {
-                        imageFile = null;
-                        previewUrl = '';
-                        removeImage = true;
-                      }),
-                      child: const Text('Remove photo', style: TextStyle(color: JaColors.danger)),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
             Expanded(child: FieldLabel(label: 'Name', child: TextField(controller: name))),
             const SizedBox(width: 12),
             Expanded(
               child: FieldLabel(
-                label: 'SKU',
-                child: TextField(
-                  controller: sku,
-                  decoration: const InputDecoration(hintText: 'Auto'),
-                  onChanged: (value) {
-                    skuManual = value.trim().isNotEmpty;
-                    if (!skuManual) {
-                      sku.text = nextSku(category, widget.products, widget.categories);
-                      sku.selection = TextSelection.collapsed(offset: sku.text.length);
-                    }
-                  },
-                ),
+                label: 'Alias',
+                child: TextField(controller: alias, decoration: const InputDecoration(hintText: 'Optional')),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
+        FieldLabel(
+          label: 'SKU',
+          child: TextField(controller: sku, enabled: false, decoration: const InputDecoration(hintText: 'Auto')),
+        ),
+        const SizedBox(height: 12),
+        FieldLabel(
+          label: 'Barcode',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Code128Graphic(value: barcode.text),
+              const SizedBox(height: 8),
+              JaButton(
+                label: 'Print barcode',
+                expanded: true,
+                icon: Icons.print,
+                onPressed: barcode.text.trim().isEmpty
+                    ? null
+                    : () async {
+                        setState(() => error = '');
+                        try {
+                          await printBarcodeLabel(name: name.text, sku: sku.text, barcode: barcode.text);
+                        } catch (err) {
+                          if (!mounted) return;
+                          setState(() {
+                            error = err is PrinterException ? err.message : 'Unable to print barcode.';
+                          });
+                        }
+                      },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: FieldLabel(label: 'Barcode', child: TextField(controller: barcode))),
-            const SizedBox(width: 12),
             Expanded(
               child: FieldLabel(
                 label: 'Category',
@@ -478,33 +452,31 @@ class _ProductFormState extends State<_ProductForm> {
                       .toList(),
                   onChanged: (value) {
                     setState(() => category = value ?? '');
-                    if (!skuManual) {
-                      sku.text = nextSku(category, widget.products, widget.categories);
-                    }
+                    _syncSku();
                   },
                 ),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: FieldLabel(label: 'Unit', child: TextField(controller: unit))),
             const SizedBox(width: 12),
-            Expanded(child: FieldLabel(label: 'Stock', child: TextField(controller: stock, keyboardType: TextInputType.number))),
+            Expanded(child: FieldLabel(label: 'Unit', child: TextField(controller: unit))),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
+            Expanded(child: FieldLabel(label: 'Stock', child: TextField(controller: stock, keyboardType: TextInputType.number))),
+            const SizedBox(width: 12),
             Expanded(
               child: FieldLabel(
                 label: 'Retail price',
                 child: TextField(controller: retail, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               ),
             ),
-            const SizedBox(width: 12),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
             Expanded(
               child: FieldLabel(
                 label: 'Wholesale price',
@@ -515,11 +487,7 @@ class _ProductFormState extends State<_ProductForm> {
                 ),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
+            const SizedBox(width: 12),
             Expanded(
               child: FieldLabel(
                 label: 'Wholesale min qty',
@@ -530,22 +498,12 @@ class _ProductFormState extends State<_ProductForm> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FieldLabel(
-                label: 'Cost',
-                child: TextField(
-                  controller: cost,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(hintText: 'Auto'),
-                  onChanged: (value) {
-                    costManual = value.trim().isNotEmpty;
-                    if (!costManual) _syncCost();
-                  },
-                ),
-              ),
-            ),
           ],
+        ),
+        const SizedBox(height: 12),
+        FieldLabel(
+          label: 'Cost',
+          child: TextField(controller: cost, enabled: false, decoration: const InputDecoration(hintText: 'Auto')),
         ),
         CheckboxListTile(
           contentPadding: EdgeInsets.zero,

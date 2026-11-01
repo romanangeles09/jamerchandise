@@ -3,84 +3,55 @@ import { Minus, Plus } from "lucide-react";
 import { peso } from "../lib/money";
 
 export default function BarcodeScanner({ error, cart, onScan, onUpdateQty, onClose }) {
-  const videoRef = useRef(null);
+  const inputRef = useRef(null);
   const onScanRef = useRef(onScan);
   const [manual, setManual] = useState("");
-  const [cameraError, setCameraError] = useState("");
 
   onScanRef.current = onScan;
 
   useEffect(() => {
-    const video = videoRef.current;
-    let stream;
-    let timer;
-    let cancelled = false;
-    const last = { code: "", at: 0 };
+    inputRef.current?.focus();
+  }, []);
 
-    async function start() {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("no camera");
-        }
+  useEffect(() => {
+    let buffer = "";
+    let lastAt = 0;
 
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
+    function onKeyDown(event) {
+      const target = event.target;
+      const inField = target === inputRef.current || target?.closest?.("input, textarea");
+      if (inField) return;
 
-        video.srcObject = stream;
-        await video.play();
+      const now = Date.now();
+      if (now - lastAt > 400) buffer = "";
+      lastAt = now;
 
-        if (typeof window.BarcodeDetector !== "function") {
-          setCameraError("Live camera scan is not supported in this browser. Type the barcode below.");
-          return;
-        }
+      if (event.key === "Enter") {
+        const code = buffer.trim();
+        buffer = "";
+        if (!code) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onScanRef.current(code);
+        return;
+      }
 
-        const detector = new window.BarcodeDetector({
-          formats: ["ean_13", "ean_8", "code_128", "code_39", "upc_a", "upc_e", "codabar", "itf", "qr_code"],
-        });
+      if (event.key === "Backspace") {
+        if (!buffer) return;
+        event.preventDefault();
+        buffer = buffer.slice(0, -1);
+        return;
+      }
 
-        const tick = async () => {
-          if (cancelled) return;
-          try {
-            if (video.readyState >= 2) {
-              const codes = await detector.detect(video);
-              const value = String(codes[0]?.rawValue || "").trim();
-              if (value) {
-                const now = Date.now();
-                if (value !== last.code || now - last.at > 1600) {
-                  last.code = value;
-                  last.at = now;
-                  onScanRef.current(value);
-                }
-              }
-            }
-          } catch (_error) {
-            // Keep the scanner running if a frame fails to decode.
-          }
-          timer = window.setTimeout(tick, 250);
-        };
-
-        tick();
-      } catch (_error) {
-        if (!cancelled) {
-          setCameraError("Camera is not available. Type the barcode below.");
-        }
+      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        buffer += event.key;
       }
     }
 
-    start();
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      if (stream) stream.getTracks().forEach((track) => track.stop());
-      if (video) video.srcObject = null;
-    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
   function submitManual(event) {
@@ -89,6 +60,7 @@ export default function BarcodeScanner({ error, cart, onScan, onUpdateQty, onClo
     if (!code) return;
     onScan(code);
     setManual("");
+    inputRef.current?.focus();
   }
 
   return (
@@ -101,12 +73,7 @@ export default function BarcodeScanner({ error, cart, onScan, onUpdateQty, onClo
           </button>
         </div>
 
-        <video ref={videoRef} className="barcode-video" playsInline muted autoPlay />
-        {cameraError ? (
-          <p className="hint">{cameraError}</p>
-        ) : (
-          <p className="hint">Point the camera at a barcode. Keep scanning to add more items.</p>
-        )}
+        <p className="hint">Scan with the USB barcode scanner, or type a barcode or SKU. Items appear below.</p>
         {error ? <p className="alert">{error}</p> : null}
         {cart?.length ? (
           <ul className="scan-cart">
@@ -138,9 +105,12 @@ export default function BarcodeScanner({ error, cart, onScan, onUpdateQty, onClo
           <label>
             Barcode or SKU
             <input
+              ref={inputRef}
               value={manual}
               onChange={(event) => setManual(event.target.value)}
               autoFocus
+              autoComplete="off"
+              spellCheck="false"
             />
           </label>
           <button type="submit" className="btn primary">

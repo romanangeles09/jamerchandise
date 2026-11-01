@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import 'bluetooth_printer.dart';
 import 'models.dart';
 import 'money.dart';
 
@@ -19,11 +21,74 @@ String receiptDate(DateTime value) {
   return DateFormat('MM/dd/yyyy hh:mm a').format(toManila(value));
 }
 
-Future<void> printSaleReceipt(Sale sale) {
-  return Printing.layoutPdf(
-    name: 'JA ${sale.invoiceNo}',
-    onLayout: (_) => buildReceiptPdf(sale),
-  );
+Future<void> printSaleReceipt(Sale sale) async {
+  if (!BluetoothPrinter.isSupported) {
+    await Printing.layoutPdf(
+      name: 'JA ${sale.invoiceNo}',
+      onLayout: (_) => buildReceiptPdf(sale),
+    );
+    return;
+  }
+  await BluetoothPrinter.instance.printBytes(await buildReceiptEscPos(sale));
+}
+
+Future<List<int>> buildReceiptEscPos(Sale sale) async {
+  final profile = await CapabilityProfile.load();
+  final generator = Generator(PaperSize.mm58, profile);
+  final pay = sale.paymentMethod.toUpperCase();
+  final bytes = <int>[
+    ...generator.reset(),
+    ...generator.text(
+      storeName.toUpperCase(),
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size1),
+    ),
+    ...generator.text(storeAddress, styles: const PosStyles(align: PosAlign.center)),
+    ...generator.feed(1),
+    ...generator.text(receiptDate(sale.createdAt), styles: const PosStyles(align: PosAlign.center, bold: true)),
+    ...generator.feed(1),
+    ...generator.text(_kv('TICKET', sale.invoiceNo)),
+    ...generator.text(_kv('REGISTER', 'POS')),
+    ...generator.text(_kv('CASHIER', (sale.cashier?.name ?? '—').toUpperCase())),
+    ...generator.text(_kv('TYPE', sale.saleType.toUpperCase())),
+    ...generator.hr(),
+  ];
+
+  for (final item in sale.items) {
+    bytes.addAll(generator.text(
+      _twoCol('${item.qty}X ${item.name.toUpperCase()}', php(item.lineTotal)),
+      styles: const PosStyles(bold: true),
+    ));
+    bytes.addAll(generator.text('${item.sku}  ${php(item.unitPrice)}'));
+  }
+
+  bytes.addAll(generator.hr());
+  bytes.addAll(generator.text(_twoCol('SUBTOTAL:', php(sale.subtotal))));
+  bytes.addAll(generator.text(_twoCol('DISCOUNT:', php(sale.discount))));
+  bytes.addAll(generator.text(_twoCol('TOTAL:', php(sale.total)), styles: const PosStyles(bold: true)));
+  bytes.addAll(generator.text(_twoCol('$pay:', php(sale.amountPaid))));
+  if (sale.paymentMethod.toLowerCase() == 'gcash' && sale.gcashTxnNo.isNotEmpty) {
+    bytes.addAll(generator.text(_twoCol('GCASH TXN:', sale.gcashTxnNo)));
+  }
+  bytes.addAll(generator.text(_twoCol('CHANGE:', php(sale.change))));
+  bytes.addAll(generator.hr());
+  bytes.addAll(generator.text('VISIT AGAIN SOON!', styles: const PosStyles(align: PosAlign.center, bold: true)));
+  bytes.addAll(generator.feed(3));
+  return bytes;
+}
+
+String _kv(String label, String value) {
+  final left = '$label:'.padRight(10);
+  return '$left$value';
+}
+
+String _twoCol(String left, String right, [int width = 32]) {
+  if (left.length + right.length >= width) {
+    final maxLeft = width - right.length - 1;
+    if (maxLeft < 1) return right.padLeft(width);
+    final clipped = left.length > maxLeft ? left.substring(0, maxLeft) : left;
+    return '$clipped $right';
+  }
+  return left + ' ' * (width - left.length - right.length) + right;
 }
 
 Future<Uint8List> buildReceiptPdf(Sale sale) async {
@@ -51,10 +116,10 @@ Future<Uint8List> buildReceiptPdf(Sale sale) async {
             pw.SizedBox(height: 10),
             pw.Text(receiptDate(sale.createdAt), style: bold, textAlign: pw.TextAlign.center),
             pw.SizedBox(height: 8),
-            _kv('TICKET', sale.invoiceNo, base, bold),
-            _kv('REGISTER', 'POS', base, bold),
-            _kv('CASHIER', (sale.cashier?.name ?? '—').toUpperCase(), base, bold),
-            _kv('TYPE', sale.saleType.toUpperCase(), base, bold),
+            _pdfKv('TICKET', sale.invoiceNo, base, bold),
+            _pdfKv('REGISTER', 'POS', base, bold),
+            _pdfKv('CASHIER', (sale.cashier?.name ?? '—').toUpperCase(), base, bold),
+            _pdfKv('TYPE', sale.saleType.toUpperCase(), base, bold),
             pw.SizedBox(height: 8),
             pw.Text('-' * 32, style: base, textAlign: pw.TextAlign.center),
             pw.SizedBox(height: 6),
@@ -88,9 +153,6 @@ Future<Uint8List> buildReceiptPdf(Sale sale) async {
             pw.Text('-' * 32, style: base, textAlign: pw.TextAlign.center),
             pw.SizedBox(height: 8),
             pw.Text('VISIT AGAIN SOON!', style: bold, textAlign: pw.TextAlign.center),
-            // pw.SizedBox(height: 6),
-            // pw.Text('RETURNS ACCEPTED WITHIN', style: base, textAlign: pw.TextAlign.center),
-            // pw.Text('30 DAYS WITH RECEIPT.', style: base, textAlign: pw.TextAlign.center),
           ],
         );
       },
@@ -100,7 +162,7 @@ Future<Uint8List> buildReceiptPdf(Sale sale) async {
   return doc.save();
 }
 
-pw.Widget _kv(String label, String value, pw.TextStyle base, pw.TextStyle bold) {
+pw.Widget _pdfKv(String label, String value, pw.TextStyle base, pw.TextStyle bold) {
   return pw.Row(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
     children: [

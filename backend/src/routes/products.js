@@ -18,6 +18,7 @@ function productPayload(body) {
   const wholesaleMinQty = optionalNumber(body.wholesaleMinQty);
   return {
     name: String(body.name || "").trim(),
+    alias: String(body.alias || "").trim(),
     sku: String(body.sku || "").trim().toUpperCase(),
     barcode: String(body.barcode || "").trim(),
     category: body.category,
@@ -100,6 +101,7 @@ router.get("/", async (req, res) => {
       const term = String(q).trim();
       filter.$or = [
         { name: { $regex: term, $options: "i" } },
+        { alias: { $regex: term, $options: "i" } },
         { sku: { $regex: term, $options: "i" } },
         { barcode: { $regex: term, $options: "i" } },
       ];
@@ -117,20 +119,23 @@ router.get("/", async (req, res) => {
 
 router.post("/", handleImageUpload, async (req, res) => {
   try {
-    const providedSku = Boolean(String(req.body.sku || "").trim());
     const data = productPayload(req.body);
+    data.sku = "";
     await applyProductDefaults(data);
     const error = validateProduct(data);
     if (error) return res.status(400).json({ message: error });
 
     const product = new Product(data);
     await applyImage(product, req);
-    await saveProductWithSkuRetry(product, { regenerateSku: !providedSku });
+    await saveProductWithSkuRetry(product, { regenerateSku: true, regenerateBarcode: true });
     await product.populate("category", "name");
     res.status(201).json(toProductJson(product));
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ message: "A product with that SKU already exists." });
+      const field = Object.keys(error.keyPattern || error.keyValue || {})[0];
+      return res.status(400).json({
+        message: field === "barcode" ? "A product with that barcode already exists." : "A product with that SKU already exists.",
+      });
     }
     res.status(error.status || 500).json({ message: error.message || "Unable to create product." });
   }
@@ -138,23 +143,27 @@ router.post("/", handleImageUpload, async (req, res) => {
 
 router.put("/:id", handleImageUpload, async (req, res) => {
   try {
-    const providedSku = Boolean(String(req.body.sku || "").trim());
     const data = productPayload(req.body);
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found." });
 
+    data.sku = product.sku;
+    data.barcode = product.barcode;
     await applyProductDefaults(data, product);
     const error = validateProduct(data);
     if (error) return res.status(400).json({ message: error });
 
     Object.assign(product, data);
     await applyImage(product, req);
-    await saveProductWithSkuRetry(product, { regenerateSku: !providedSku });
+    await saveProductWithSkuRetry(product, { regenerateSku: false });
     await product.populate("category", "name");
     res.json(toProductJson(product));
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ message: "A product with that SKU already exists." });
+      const field = Object.keys(error.keyPattern || error.keyValue || {})[0];
+      return res.status(400).json({
+        message: field === "barcode" ? "A product with that barcode already exists." : "A product with that SKU already exists.",
+      });
     }
     res.status(error.status || 500).json({ message: error.message || "Unable to update product." });
   }
