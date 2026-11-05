@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'bluetooth_printer.dart';
+import 'layout.dart';
 import 'money.dart';
 import 'models.dart';
 import 'receipt.dart';
@@ -98,30 +99,49 @@ class PageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final titleStyle = Theme.of(context).textTheme.headlineSmall?.copyWith(
+          fontSize: isCompact(context) ? 22 : null,
+          height: isCompact(context) ? 1.1 : null,
+        );
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          eyebrow.toUpperCase(),
+          style: const TextStyle(
+            color: JaColors.copper,
+            fontSize: 12,
+            letterSpacing: 1.8,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(title, style: titleStyle),
+      ],
+    );
+    if (trailing == null) {
+      return Padding(padding: const EdgeInsets.only(bottom: 12), child: heading);
+    }
+    if (isCompact(context)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            heading,
+            const SizedBox(height: 10),
+            Align(alignment: Alignment.centerLeft, child: trailing),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  eyebrow.toUpperCase(),
-                  style: const TextStyle(
-                    color: JaColors.copper,
-                    fontSize: 12,
-                    letterSpacing: 1.8,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(title, style: Theme.of(context).textTheme.headlineSmall),
-              ],
-            ),
-          ),
-          ?trailing,
+          Expanded(child: heading),
+          trailing!,
         ],
       ),
     );
@@ -165,17 +185,23 @@ class StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return JaPanel(
+      padding: EdgeInsets.all(compact ? 10 : 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: JaColors.inkSoft),
-          const SizedBox(height: 8),
-          Text(label, style: const TextStyle(color: JaColors.muted)),
-          const SizedBox(height: 4),
-          Text(value, style: Theme.of(context).textTheme.headlineSmall),
+          Icon(icon, size: compact ? 16 : 18, color: JaColors.inkSoft),
+          SizedBox(height: compact ? 4 : 8),
+          Text(label, style: TextStyle(color: JaColors.muted, fontSize: compact ? 12 : 14)),
+          SizedBox(height: compact ? 2 : 4),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: compact ? 20 : null),
+          ),
           if (hint != null)
-            Text(hint!, style: const TextStyle(color: JaColors.muted, fontSize: 13)),
+            Text(hint!, style: TextStyle(color: JaColors.muted, fontSize: compact ? 11 : 13)),
         ],
       ),
     );
@@ -196,30 +222,39 @@ class SegmentedChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: JaColors.cream,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: options.map((option) {
           final selected = option.$1 == value;
-          return Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => onChanged(option.$1),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: selected ? JaColors.ink : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  option.$2,
-                  style: TextStyle(color: selected ? Colors.white : JaColors.ink),
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => onChanged(option.$1),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12, vertical: compact ? 6 : 8),
+                  decoration: BoxDecoration(
+                    color: selected ? JaColors.ink : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    option.$2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? Colors.white : JaColors.ink,
+                      fontSize: compact ? 13 : 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -244,13 +279,14 @@ class ChipChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return Padding(
-      padding: const EdgeInsets.only(right: 6, bottom: 6),
+      padding: EdgeInsets.only(right: 6, bottom: compact ? 0 : 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: compact ? 4 : 5),
           decoration: BoxDecoration(
             color: selected ? JaColors.ink : Colors.white,
             border: Border.all(color: selected ? JaColors.ink : JaColors.line),
@@ -344,20 +380,25 @@ Future<void> showJaDialog({
   return showDialog<void>(
     context: context,
     builder: (context) {
+      final compact = isCompact(context);
       return Dialog(
         backgroundColor: JaColors.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: EdgeInsets.symmetric(horizontal: compact ? 12 : 40, vertical: compact ? 16 : 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 18 : 24)),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: width, maxHeight: MediaQuery.sizeOf(context).height * 0.9),
+          constraints: BoxConstraints(
+            maxWidth: dialogWidth(context, width),
+            maxHeight: MediaQuery.sizeOf(context).height * (compact ? 0.92 : 0.9),
+          ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+            padding: EdgeInsets.fromLTRB(compact ? 16 : 24, compact ? 14 : 18, compact ? 16 : 24, compact ? 16 : 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
                     Expanded(
-                      child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+                      child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: compact ? 20 : null)),
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
@@ -614,10 +655,12 @@ class JaTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final minWidth = isCompact(context) ? width - 48 : (width - 340).clamp(480.0, width);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: ConstrainedBox(
-        constraints: BoxConstraints(minWidth: MediaQuery.sizeOf(context).width - 340),
+        constraints: BoxConstraints(minWidth: minWidth),
         child: DataTable(
           headingTextStyle: const TextStyle(color: JaColors.muted, fontWeight: FontWeight.w600),
           columns: columns,

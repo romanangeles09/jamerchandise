@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../access.dart';
 import '../api.dart';
+import '../layout.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -49,96 +50,173 @@ class _UsersScreenState extends State<UsersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        PageHeader(
-          eyebrow: 'Staff logins',
-          title: 'User Access',
-          trailing: JaButton(label: 'Add user', primary: true, onPressed: () => openUser()),
-        ),
-        if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 12)],
+        if (compact)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: JaButton(label: 'Add user', primary: true, onPressed: () => openUser()),
+          )
+        else
+          PageHeader(
+            eyebrow: 'Staff logins',
+            title: 'User Access',
+            trailing: JaButton(label: 'Add user', primary: true, onPressed: () => openUser()),
+          ),
+        if (error.isNotEmpty) ...[JaAlert(error), SizedBox(height: compact ? 8 : 12)],
+        if (compact) const SizedBox(height: 6),
         Expanded(
-          child: JaPanel(
-            child: SingleChildScrollView(
-              child: JaTable(
-                columns: const [
-                  DataColumn(label: Text('Name')),
-                  DataColumn(label: Text('Email / username')),
-                  DataColumn(label: Text('Role')),
-                  DataColumn(label: Text('Access')),
-                  DataColumn(label: Text('')),
-                ],
-                rows: users.isEmpty
-                    ? const [
-                        DataRow(
-                          cells: [
-                            DataCell(Text('No users yet.')),
-                            DataCell(Text('')),
-                            DataCell(Text('')),
-                            DataCell(Text('')),
-                            DataCell(Text('')),
-                          ],
-                        ),
-                      ]
-                    : users
-                          .map(
-                            (user) => DataRow(
-                              cells: [
-                                DataCell(
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(user.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                      Text(
-                                        user.isActive ? 'Active' : 'Disabled',
-                                        style: const TextStyle(color: JaColors.muted, fontSize: 12),
+          child: compact
+              ? (users.isEmpty
+                  ? const Align(
+                      alignment: Alignment.topLeft,
+                      child: Text('No users yet.', style: TextStyle(color: JaColors.muted)),
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.zero,
+                      itemCount: users.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final user = users[index];
+                        final accessLabels = accessPages
+                            .where((page) => user.access.contains(page.id))
+                            .map((page) => page.label)
+                            .join(', ');
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: JaColors.line),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(user.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              Text(
+                                '${user.isActive ? 'Active' : 'Disabled'} · ${user.role}',
+                                style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                              ),
+                              Text(user.email, style: const TextStyle(fontSize: 13)),
+                              if (accessLabels.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(accessLabels, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                              ],
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  JaButton(label: 'Edit', onPressed: () => openUser(user)),
+                                  if (user.role != 'SuperAdmin') ...[
+                                    const SizedBox(width: 8),
+                                    JaButton(
+                                      label: 'Delete',
+                                      onPressed: () async {
+                                        if (!await confirmAction(context, 'Delete this user?')) return;
+                                        if (!context.mounted) return;
+                                        try {
+                                          await context.read<ApiClient>().deleteUser(user.id);
+                                          await load();
+                                        } catch (err) {
+                                          setState(
+                                            () => error = err is ApiException
+                                                ? err.message
+                                                : 'Unable to delete user.',
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ))
+              : JaPanel(
+                  padding: const EdgeInsets.all(18),
+                  child: SingleChildScrollView(
+                    child: JaTable(
+                      columns: const [
+                        DataColumn(label: Text('Name')),
+                        DataColumn(label: Text('Email / username')),
+                        DataColumn(label: Text('Role')),
+                        DataColumn(label: Text('Access')),
+                        DataColumn(label: Text('')),
+                      ],
+                      rows: users.isEmpty
+                          ? const [
+                              DataRow(
+                                cells: [
+                                  DataCell(Text('No users yet.')),
+                                  DataCell(Text('')),
+                                  DataCell(Text('')),
+                                  DataCell(Text('')),
+                                  DataCell(Text('')),
+                                ],
+                              ),
+                            ]
+                          : users
+                                .map(
+                                  (user) => DataRow(
+                                    cells: [
+                                      DataCell(
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(user.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                            Text(
+                                              user.isActive ? 'Active' : 'Disabled',
+                                              style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      DataCell(Text(user.email)),
+                                      DataCell(Text(user.role)),
+                                      DataCell(
+                                        Text(
+                                          accessPages
+                                              .where((page) => user.access.contains(page.id))
+                                              .map((page) => page.label)
+                                              .join(', '),
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Row(
+                                          children: [
+                                            TextButton(onPressed: () => openUser(user), child: const Text('Edit')),
+                                            if (user.role != 'SuperAdmin')
+                                              TextButton(
+                                                onPressed: () async {
+                                                  if (!await confirmAction(context, 'Delete this user?')) return;
+                                                  if (!context.mounted) return;
+                                                  try {
+                                                    await context.read<ApiClient>().deleteUser(user.id);
+                                                    await load();
+                                                  } catch (err) {
+                                                    setState(
+                                                      () => error = err is ApiException
+                                                          ? err.message
+                                                          : 'Unable to delete user.',
+                                                    );
+                                                  }
+                                                },
+                                                child: const Text('Delete', style: TextStyle(color: JaColors.danger)),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                DataCell(Text(user.email)),
-                                DataCell(Text(user.role)),
-                                DataCell(
-                                  Text(
-                                    accessPages
-                                        .where((page) => user.access.contains(page.id))
-                                        .map((page) => page.label)
-                                        .join(', '),
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                                DataCell(
-                                  Row(
-                                    children: [
-                                      TextButton(onPressed: () => openUser(user), child: const Text('Edit')),
-                                      if (user.role != 'SuperAdmin')
-                                        TextButton(
-                                          onPressed: () async {
-                                            if (!await confirmAction(context, 'Delete this user?')) return;
-                                            if (!context.mounted) return;
-                                            try {
-                                              await context.read<ApiClient>().deleteUser(user.id);
-                                              await load();
-                                            } catch (err) {
-                                              setState(
-                                                () => error = err is ApiException
-                                                    ? err.message
-                                                    : 'Unable to delete user.',
-                                              );
-                                            }
-                                          },
-                                          child: const Text('Delete', style: TextStyle(color: JaColors.danger)),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          .toList(),
-              ),
+                                )
+                                .toList(),
+                    ),
             ),
           ),
         ),

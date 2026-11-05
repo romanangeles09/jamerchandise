@@ -43,6 +43,16 @@ String nextCode128Barcode(Iterable<String> used) {
   return DateTime.now().millisecondsSinceEpoch.toString().padLeft(13, '0').substring(0, 13);
 }
 
+String barcodeCaption(String name, Object? price) {
+  final title = name.trim().isEmpty ? 'JA Merchandise' : name.trim();
+  final raw = '$price'.trim();
+  if (raw.isEmpty) return title;
+  final amount = double.tryParse(raw);
+  if (amount == null) return title;
+  final priceText = amount == amount.roundToDouble() ? amount.round().toString() : amount.toStringAsFixed(2);
+  return '$title Php $priceText';
+}
+
 String code128Bits(String value) {
   if (value.isEmpty) return '';
   const start = 104;
@@ -60,9 +70,15 @@ String code128Bits(String value) {
 }
 
 class Code128Graphic extends StatelessWidget {
-  const Code128Graphic({super.key, required this.value, this.height = 88});
+  const Code128Graphic({
+    super.key,
+    required this.value,
+    this.label,
+    this.height = 88,
+  });
 
   final String value;
+  final String? label;
   final double height;
 
   @override
@@ -81,7 +97,7 @@ class Code128Graphic extends StatelessWidget {
                 child: const Center(child: Text('Auto', style: TextStyle(color: JaColors.muted))),
               )
             : CustomPaint(
-                painter: _Code128Painter(value),
+                painter: _Code128Painter(value, label ?? value),
                 child: SizedBox(width: double.infinity, height: height),
               ),
       ),
@@ -90,9 +106,10 @@ class Code128Graphic extends StatelessWidget {
 }
 
 class _Code128Painter extends CustomPainter {
-  _Code128Painter(this.value);
+  _Code128Painter(this.value, this.label);
 
   final String value;
+  final String label;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -111,15 +128,18 @@ class _Code128Painter extends CustomPainter {
     }
     final text = TextPainter(
       text: TextSpan(
-        text: value,
-        style: const TextStyle(color: JaColors.ink, fontSize: 13, letterSpacing: 1.2, fontWeight: FontWeight.w600),
+        text: label,
+        style: const TextStyle(color: JaColors.ink, fontSize: 12, fontWeight: FontWeight.w600),
       ),
       textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
     )..layout(maxWidth: size.width);
     text.paint(canvas, Offset((size.width - text.width) / 2, barHeight + 1));
     text.dispose();
   }
 
   @override
-  bool shouldRepaint(covariant _Code128Painter oldDelegate) => oldDelegate.value != value;
+  bool shouldRepaint(covariant _Code128Painter oldDelegate) =>
+      oldDelegate.value != value || oldDelegate.label != label;
 }

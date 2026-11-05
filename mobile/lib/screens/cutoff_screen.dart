@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../api.dart';
+import '../layout.dart';
 import '../models.dart';
 import '../money.dart';
 import '../theme.dart';
@@ -58,9 +59,227 @@ class _CutoffScreenState extends State<CutoffScreen> {
     load();
   }
 
+  Widget _filters() {
+    return Wrap(
+      spacing: 14,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.end,
+      children: [
+        SizedBox(
+          width: isCompact(context) ? double.infinity : 200,
+          child: FieldLabel(
+            label: 'Day',
+            child: InkWell(
+              onTap: pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(),
+                child: Text(date),
+              ),
+            ),
+          ),
+        ),
+        if (data?.canPickCashier == true)
+          SizedBox(
+            width: isCompact(context) ? double.infinity : 220,
+            child: FieldLabel(
+              label: 'Cashier',
+              child: DropdownButtonFormField<String>(
+                initialValue: cashier,
+                items: [
+                  const DropdownMenuItem(value: 'all', child: Text('All cashiers')),
+                  ...?data?.cashiers.map((user) => DropdownMenuItem(value: user.id, child: Text(user.name))),
+                ],
+                onChanged: (value) {
+                  setState(() => cashier = value ?? 'all');
+                  load();
+                },
+              ),
+            ),
+          ),
+        SizedBox(
+          width: isCompact(context) ? double.infinity : 280,
+          child: FieldLabel(
+            label: 'Payment',
+            child: SegmentedChoice(
+              value: payment,
+              options: const [('all', 'All'), ('cash', 'Cash'), ('gcash', 'GCash')],
+              onChanged: (value) {
+                setState(() => payment = value);
+                load();
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _stats(SummaryStats? summary) {
+    final cards = [
+      StatCard(
+        icon: Icons.receipt_long_outlined,
+        label: 'Tickets',
+        value: '${summary?.tickets ?? 0}',
+        hint: '${summary?.itemCount ?? 0} items sold',
+      ),
+      StatCard(
+        icon: Icons.inventory_2_outlined,
+        label: 'Items sold',
+        value: '${summary?.itemCount ?? 0}',
+        hint: '${peso(summary?.subtotal)} before discount',
+      ),
+      StatCard(
+        icon: Icons.account_balance_wallet_outlined,
+        label: 'Cash',
+        value: peso(summary?.cash),
+        hint: 'Cash payments',
+      ),
+      StatCard(
+        icon: Icons.payments_outlined,
+        label: 'GCash',
+        value: peso(summary?.gcash),
+        hint: 'GCash payments',
+      ),
+    ];
+    if (isCompact(context)) {
+      final short = MediaQuery.sizeOf(context).height < 420;
+      return GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: short ? 2.8 : 2.2,
+        children: cards,
+      );
+    }
+    return Row(
+      children: [
+        for (var i = 0; i < cards.length; i += 1) ...[
+          if (i > 0) const SizedBox(width: 16),
+          Expanded(child: cards[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _productsPanel() {
+    return JaPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Products sold', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if ((data?.products ?? const []).isEmpty)
+            const Text('No product sales for this cutoff.', style: TextStyle(color: JaColors.muted))
+          else if (isCompact(context))
+            ...data!.products.map(
+              (product) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          Text('Qty ${product.qty}', style: const TextStyle(color: JaColors.muted, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Text(peso(product.amount), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            )
+          else
+            SingleChildScrollView(
+              child: JaTable(
+                columns: const [
+                  DataColumn(label: Text('Product')),
+                  DataColumn(label: Text('SKU')),
+                  DataColumn(label: Text('Qty')),
+                  DataColumn(label: Text('Amount')),
+                ],
+                rows: data!.products
+                    .map(
+                      (product) => DataRow(
+                        cells: [
+                          DataCell(Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700))),
+                          DataCell(Text(product.sku)),
+                          DataCell(Text('${product.qty}')),
+                          DataCell(Text(peso(product.amount))),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ticketsPanel(SummaryStats? summary) {
+    return JaPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Tickets', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if ((data?.sales ?? const []).isEmpty)
+            const Text('No tickets for this cutoff.', style: TextStyle(color: JaColors.muted))
+          else
+            ...data!.sales.map((sale) {
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: isCompact(context),
+                title: Text(sale.invoiceNo, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                  '${sale.cashier?.name ?? '—'} · ${sale.paymentMethod} · ${formatDate(sale.createdAt)}',
+                ),
+                trailing: Text(peso(sale.total)),
+                onTap: () => showTicket(context, sale),
+              );
+            }),
+          if ((summary?.discount ?? 0) > 0)
+            Text('Discounts: ${peso(summary?.discount)}', style: const TextStyle(color: JaColors.muted)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final summary = data?.summary;
+    final compact = isCompact(context);
+
+    if (compact) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          Row(
+            children: [
+              const Text('Total', style: TextStyle(color: JaColors.muted)),
+              const Spacer(),
+              Text(peso(summary?.total), style: Theme.of(context).textTheme.titleLarge?.copyWith(color: JaColors.forest, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 8)],
+          if (loading) const Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Loading cutoff...', style: TextStyle(color: JaColors.muted))),
+          _filters(),
+          const SizedBox(height: 10),
+          _stats(summary),
+          const SizedBox(height: 10),
+          _productsPanel(),
+          const SizedBox(height: 10),
+          _ticketsPanel(summary),
+          const SizedBox(height: 12),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -71,95 +290,9 @@ class _CutoffScreenState extends State<CutoffScreen> {
         ),
         if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 12)],
         if (loading) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Loading cutoff...', style: TextStyle(color: JaColors.muted))),
-        Wrap(
-          spacing: 14,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.end,
-          children: [
-            SizedBox(
-              width: 200,
-              child: FieldLabel(
-                label: 'Day',
-                child: InkWell(
-                  onTap: pickDate,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(),
-                    child: Text(date),
-                  ),
-                ),
-              ),
-            ),
-            if (data?.canPickCashier == true)
-              SizedBox(
-                width: 220,
-                child: FieldLabel(
-                  label: 'Cashier',
-                  child: DropdownButtonFormField<String>(
-                    initialValue: cashier,
-                    items: [
-                      const DropdownMenuItem(value: 'all', child: Text('All cashiers')),
-                      ...?data?.cashiers.map((user) => DropdownMenuItem(value: user.id, child: Text(user.name))),
-                    ],
-                    onChanged: (value) {
-                      setState(() => cashier = value ?? 'all');
-                      load();
-                    },
-                  ),
-                ),
-              ),
-            FieldLabel(
-              label: 'Payment',
-              child: SegmentedChoice(
-                value: payment,
-                options: const [('all', 'All'), ('cash', 'Cash'), ('gcash', 'GCash')],
-                onChanged: (value) {
-                  setState(() => payment = value);
-                  load();
-                },
-              ),
-            ),
-          ],
-        ),
+        _filters(),
         const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(
-              child: StatCard(
-                icon: Icons.receipt_long_outlined,
-                label: 'Tickets',
-                value: '${summary?.tickets ?? 0}',
-                hint: '${summary?.itemCount ?? 0} items sold',
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: StatCard(
-                icon: Icons.inventory_2_outlined,
-                label: 'Items sold',
-                value: '${summary?.itemCount ?? 0}',
-                hint: '${peso(summary?.subtotal)} before discount',
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: StatCard(
-                icon: Icons.account_balance_wallet_outlined,
-                label: 'Cash',
-                value: peso(summary?.cash),
-                hint: 'Cash payments',
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: StatCard(
-                icon: Icons.payments_outlined,
-                label: 'GCash',
-                value: peso(summary?.gcash),
-                hint: 'GCash payments',
-              ),
-            ),
-          ],
-        ),
+        _stats(summary),
         const SizedBox(height: 16),
         Expanded(
           child: Row(

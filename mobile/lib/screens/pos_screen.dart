@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../api.dart';
 import '../auth.dart';
 import '../cart_store.dart';
+import '../layout.dart';
 import '../models.dart';
 import '../money.dart';
 import '../theme.dart';
@@ -31,6 +32,7 @@ class _PosScreenState extends State<PosScreen> {
   String paymentMethod = 'cash';
   String error = '';
   String scanNotice = '';
+  String mobilePane = 'products';
   bool busy = false;
   bool cartReady = false;
 
@@ -361,20 +363,286 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  Widget _catalogPane({required bool compact}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!compact)
+          PageHeader(
+            eyebrow: 'Register',
+            title: 'Point of sale',
+            trailing: SegmentedChoice(
+              value: saleType,
+              options: const [('retail', 'Retail'), ('wholesale', 'Wholesale')],
+              onChanged: (value) {
+                setState(() => saleType = value);
+                rememberCart();
+              },
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: search,
+                decoration: InputDecoration(
+                  hintText: compact ? 'Search / barcode' : 'Search name, SKU, or barcode',
+                  isDense: compact,
+                ),
+                onSubmitted: (value) {
+                  if (findByCode(value) != null) addByCode(value);
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            JaButton(
+              label: compact ? 'Scan' : 'Scan barcode',
+              icon: Icons.qr_code_scanner,
+              onPressed: openScanner,
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        SizedBox(
+          height: compact ? 32 : null,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ChipChoice(label: 'All', selected: category.isEmpty, onTap: () => setState(() => category = '')),
+                ...categories.map(
+                  (item) => ChipChoice(
+                    label: item.name,
+                    selected: category == item.id,
+                    onTap: () => setState(() => category = item.id),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: compact ? 6 : 8),
+        Expanded(
+          child: GridView.builder(
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: compact ? 110 : 148,
+              mainAxisSpacing: compact ? 6 : 8,
+              crossAxisSpacing: compact ? 6 : 8,
+              childAspectRatio: compact ? 0.88 : 0.72,
+            ),
+            itemCount: visible.length,
+            itemBuilder: (context, index) {
+              final product = visible[index];
+              final disabled = product.stock < 1 || (saleType == 'wholesale' && !product.hasWholesale);
+              return Opacity(
+                opacity: disabled ? 0.45 : 1,
+                child: InkWell(
+                  onTap: disabled ? null : () => addProduct(product),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Ink(
+                    padding: EdgeInsets.all(compact ? 8 : 10),
+                    decoration: BoxDecoration(
+                      color: JaColors.card,
+                      border: Border.all(color: JaColors.line),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final side = constraints.biggest.shortestSide;
+                              return ProductPhoto(
+                                name: product.name,
+                                hasImage: product.hasImage,
+                                imageUrl: product.imageUrl,
+                                size: side,
+                                radius: 10,
+                              );
+                            },
+                          ),
+                        ),
+                        SizedBox(height: compact ? 4 : 6),
+                        if (!compact)
+                          Text(
+                            product.category?.name ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: JaColors.muted, fontSize: 11),
+                          ),
+                        Text(
+                          product.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13),
+                        ),
+                        Text(
+                          peso(priceOf(product)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: JaColors.copperDark, fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13),
+                        ),
+                        if (!compact)
+                          Text(
+                            '${product.stock} ${product.unit}${saleType == 'wholesale' && product.hasWholesale ? ' · min ${product.wholesaleMin}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: JaColors.muted, fontSize: 11),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _cartPane({required bool compact}) {
+    return JaPanel(
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Cart', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: compact ? 18 : 20)),
+          const SizedBox(height: 8),
+          if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 8)],
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                if (cart.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text('Tap a product to add it.', style: TextStyle(color: JaColors.muted)),
+                  )
+                else
+                  ...cart.map((item) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                Text(
+                                  '${peso(unitPrice(item))} / ${item.unit}',
+                                  style: const TextStyle(color: JaColors.muted, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _qtyButton(Icons.remove, () => updateQty(item.product, item.qty - 1)),
+                          Text('${item.qty}', style: const TextStyle(fontSize: 13)),
+                          _qtyButton(Icons.add, () => updateQty(item.product, item.qty + 1)),
+                          _qtyButton(
+                            Icons.delete_outline,
+                            () => requestRemove(item),
+                            color: JaColors.danger,
+                          ),
+                          SizedBox(
+                            width: compact ? 56 : 64,
+                            child: Text(peso(unitPrice(item) * item.qty), textAlign: TextAlign.right, style: const TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                FieldLabel(
+                  label: 'Discount',
+                  child: TextField(
+                    keyboardType: TextInputType.number,
+                    controller: discountInput,
+                    decoration: const InputDecoration(isDense: true),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FieldLabel(
+                  label: 'Payment',
+                  child: DropdownButtonFormField<String>(
+                    initialValue: paymentMethod,
+                    isDense: true,
+                    items: const [
+                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'gcash', child: Text('GCash')),
+                    ],
+                    onChanged: (value) {
+                      setState(() => paymentMethod = value ?? 'cash');
+                      if (value != 'gcash') gcashTxnNo.clear();
+                      rememberCart();
+                    },
+                  ),
+                ),
+                if (paymentMethod == 'gcash') ...[
+                  const SizedBox(height: 8),
+                  FieldLabel(
+                    label: 'GCash Txn No.',
+                    child: TextField(
+                      controller: gcashTxnNo,
+                      decoration: const InputDecoration(isDense: true),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                FieldLabel(
+                  label: 'Amount paid',
+                  child: TextField(
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    decoration: InputDecoration(isDense: true, hintText: total == 0 ? '' : '$total'),
+                    controller: paidInput,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _row('Subtotal', peso(subtotal)),
+                _row('Discount', peso(discount)),
+                _row('Total', peso(total), bold: true),
+                _row('Change', peso(change < 0 ? 0 : change)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          JaButton(
+            label: busy ? 'Saving...' : 'Complete sale',
+            primary: true,
+            expanded: true,
+            onPressed: busy ? null : checkout,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          flex: 14,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final compact = isCompact(context);
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              PageHeader(
-                eyebrow: 'Register',
-                title: 'Point of sale',
-                trailing: SegmentedChoice(
+              Expanded(
+                flex: 3,
+                child: SegmentedChoice(
+                  value: mobilePane,
+                  options: [
+                    ('products', 'Products'),
+                    ('cart', 'Cart${cart.isEmpty ? '' : ' (${cart.length})'}'),
+                  ],
+                  onChanged: (value) => setState(() => mobilePane = value),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: SegmentedChoice(
                   value: saleType,
                   options: const [('retail', 'Retail'), ('wholesale', 'Wholesale')],
                   onChanged: (value) {
@@ -383,234 +651,21 @@ class _PosScreenState extends State<PosScreen> {
                   },
                 ),
               ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: search,
-                      decoration: const InputDecoration(hintText: 'Search name, SKU, or barcode'),
-                      onSubmitted: (value) {
-                        if (findByCode(value) != null) addByCode(value);
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  JaButton(
-                    label: 'Scan barcode',
-                    icon: Icons.qr_code_scanner,
-                    onPressed: openScanner,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                children: [
-                  ChipChoice(label: 'All', selected: category.isEmpty, onTap: () => setState(() => category = '')),
-                  ...categories.map(
-                    (item) => ChipChoice(
-                      label: item.name,
-                      selected: category == item.id,
-                      onTap: () => setState(() => category = item.id),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: GridView.builder(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 148,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 0.72,
-                  ),
-                  itemCount: visible.length,
-                  itemBuilder: (context, index) {
-                    final product = visible[index];
-                    final disabled = product.stock < 1 || (saleType == 'wholesale' && !product.hasWholesale);
-                    return Opacity(
-                      opacity: disabled ? 0.45 : 1,
-                      child: InkWell(
-                        onTap: disabled ? null : () => addProduct(product),
-                        borderRadius: BorderRadius.circular(18),
-                        child: Ink(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: JaColors.card,
-                            border: Border.all(color: JaColors.line),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final side = constraints.biggest.shortestSide;
-                                    return ProductPhoto(
-                                      name: product.name,
-                                      hasImage: product.hasImage,
-                                      imageUrl: product.imageUrl,
-                                      size: side,
-                                      radius: 10,
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                product.category?.name ?? '',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: JaColors.muted, fontSize: 11),
-                              ),
-                              Text(
-                                product.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                              ),
-                              Text(
-                                peso(priceOf(product)),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: JaColors.copperDark, fontWeight: FontWeight.w700, fontSize: 13),
-                              ),
-                              Text(
-                                '${product.stock} ${product.unit}${saleType == 'wholesale' && product.hasWholesale ? ' · min ${product.wholesaleMin}' : ''}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: JaColors.muted, fontSize: 11),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
             ],
           ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 300,
-          child: JaPanel(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Cart', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-                const SizedBox(height: 8),
-                if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 8)],
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      if (cart.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 12),
-                          child: Text('Tap a product to add it.', style: TextStyle(color: JaColors.muted)),
-                        )
-                      else
-                        ...cart.map((item) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                                      Text(
-                                        '${peso(unitPrice(item))} / ${item.unit}',
-                                        style: const TextStyle(color: JaColors.muted, fontSize: 11),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                _qtyButton(Icons.remove, () => updateQty(item.product, item.qty - 1)),
-                                Text('${item.qty}', style: const TextStyle(fontSize: 13)),
-                                _qtyButton(Icons.add, () => updateQty(item.product, item.qty + 1)),
-                                _qtyButton(
-                                  Icons.delete_outline,
-                                  () => requestRemove(item),
-                                  color: JaColors.danger,
-                                ),
-                                SizedBox(
-                                  width: 64,
-                                  child: Text(peso(unitPrice(item) * item.qty), textAlign: TextAlign.right, style: const TextStyle(fontSize: 13)),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      FieldLabel(
-                        label: 'Discount',
-                        child: TextField(
-                          keyboardType: TextInputType.number,
-                          controller: discountInput,
-                          decoration: const InputDecoration(isDense: true),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      FieldLabel(
-                        label: 'Payment',
-                        child: DropdownButtonFormField<String>(
-                          initialValue: paymentMethod,
-                          isDense: true,
-                          items: const [
-                            DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                            DropdownMenuItem(value: 'gcash', child: Text('GCash')),
-                          ],
-                          onChanged: (value) {
-                            setState(() => paymentMethod = value ?? 'cash');
-                            if (value != 'gcash') gcashTxnNo.clear();
-                            rememberCart();
-                          },
-                        ),
-                      ),
-                      if (paymentMethod == 'gcash') ...[
-                        const SizedBox(height: 8),
-                        FieldLabel(
-                          label: 'GCash Txn No.',
-                          child: TextField(
-                            controller: gcashTxnNo,
-                            decoration: const InputDecoration(isDense: true),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      FieldLabel(
-                        label: 'Amount paid',
-                        child: TextField(
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                          decoration: InputDecoration(isDense: true, hintText: total == 0 ? '' : '$total'),
-                          controller: paidInput,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _row('Subtotal', peso(subtotal)),
-                      _row('Discount', peso(discount)),
-                      _row('Total', peso(total), bold: true),
-                      _row('Change', peso(change < 0 ? 0 : change)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                JaButton(
-                  label: busy ? 'Saving...' : 'Complete sale',
-                  primary: true,
-                  expanded: true,
-                  onPressed: busy ? null : checkout,
-                ),
-              ],
-            ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: mobilePane == 'cart' ? _cartPane(compact: true) : _catalogPane(compact: true),
           ),
-        ),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(flex: 14, child: _catalogPane(compact: false)),
+        const SizedBox(width: 12),
+        SizedBox(width: 300, child: _cartPane(compact: false)),
       ],
     );
   }

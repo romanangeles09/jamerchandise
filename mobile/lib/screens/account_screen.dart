@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../api.dart';
 import '../auth.dart';
 import '../bluetooth_printer.dart';
+import '../layout.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -150,118 +151,129 @@ class _AccountScreenState extends State<AccountScreen> {
           child: SingleChildScrollView(
             child: Column(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: JaPanel(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Profile', style: Theme.of(context).textTheme.titleLarge),
-                            const SizedBox(height: 12),
-                            if (profileMessage.isNotEmpty) ...[JaAlert(profileMessage, success: true), const SizedBox(height: 12)],
-                            Row(
-                              children: [
-                                if (avatarFile != null && !removeAvatar)
-                                  ClipOval(child: Image.file(avatarFile!, width: 88, height: 88, fit: BoxFit.cover))
-                                else
-                                  ProductPhoto(
-                                    name: name.text,
-                                    hasImage: previewUrl.isNotEmpty && !removeAvatar,
-                                    imageUrl: previewUrl,
-                                    size: 88,
-                                    radius: 44,
-                                  ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      JaButton(
-                                        label: 'Choose photo',
-                                        onPressed: () async {
-                                          final picked = await ImagePicker().pickImage(
-                                            source: ImageSource.gallery,
-                                            imageQuality: 85,
-                                          );
-                                          if (picked == null) return;
-                                          setState(() {
-                                            avatarFile = File(picked.path);
-                                            previewUrl = picked.path;
-                                            removeAvatar = false;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 6),
-                                      const Text(
-                                        'JPG, PNG, WEBP, or GIF up to 2 MB.',
-                                        style: TextStyle(color: JaColors.muted, fontSize: 12),
-                                      ),
-                                      if (previewUrl.isNotEmpty && !removeAvatar)
-                                        TextButton(
-                                          onPressed: () => setState(() {
-                                            avatarFile = null;
-                                            previewUrl = '';
-                                            removeAvatar = true;
-                                          }),
-                                          child: const Text('Remove photo', style: TextStyle(color: JaColors.danger)),
-                                        ),
-                                    ],
-                                  ),
+                Builder(
+                  builder: (context) {
+                    final profileCard = JaPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Profile', style: Theme.of(context).textTheme.titleLarge),
+                          const SizedBox(height: 12),
+                          if (profileMessage.isNotEmpty) ...[JaAlert(profileMessage, success: true), const SizedBox(height: 12)],
+                          Row(
+                            children: [
+                              if (avatarFile != null && !removeAvatar)
+                                ClipOval(child: Image.file(avatarFile!, width: 88, height: 88, fit: BoxFit.cover))
+                              else
+                                ProductPhoto(
+                                  name: name.text,
+                                  hasImage: previewUrl.isNotEmpty && !removeAvatar,
+                                  imageUrl: previewUrl,
+                                  size: 88,
+                                  radius: 44,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            FieldLabel(label: 'Full name', child: TextField(controller: name)),
-                            const SizedBox(height: 12),
-                            FieldLabel(label: 'Email / Username', child: TextField(controller: email)),
-                            const SizedBox(height: 12),
-                            FieldLabel(
-                              label: 'Role',
-                              child: InputDecorator(
-                                decoration: const InputDecoration(),
-                                child: Text(user?.role ?? ''),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    JaButton(
+                                      label: 'Choose photo',
+                                      onPressed: () async {
+                                        final picked = await ImagePicker().pickImage(
+                                          source: ImageSource.gallery,
+                                          imageQuality: 85,
+                                        );
+                                        if (picked == null) return;
+                                        setState(() {
+                                          avatarFile = File(picked.path);
+                                          previewUrl = picked.path;
+                                          removeAvatar = false;
+                                        });
+                                      },
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'JPG, PNG, WEBP, or GIF up to 2 MB.',
+                                      style: TextStyle(color: JaColors.muted, fontSize: 12),
+                                    ),
+                                    if (previewUrl.isNotEmpty && !removeAvatar)
+                                      TextButton(
+                                        onPressed: () => setState(() {
+                                          avatarFile = null;
+                                          previewUrl = '';
+                                          removeAvatar = true;
+                                        }),
+                                        child: const Text('Remove photo', style: TextStyle(color: JaColors.danger)),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 16),
-                            JaButton(
-                              label: saving ? 'Saving...' : 'Save profile',
-                              primary: true,
-                              onPressed: saving ? null : saveProfile,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: JaPanel(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Password', style: Theme.of(context).textTheme.titleLarge),
-                            const SizedBox(height: 12),
-                            if (passwordMessage.isNotEmpty) ...[
-                              JaAlert(passwordMessage, success: true),
-                              const SizedBox(height: 12),
                             ],
-                            FieldLabel(
-                              label: 'Current password',
-                              child: TextField(controller: currentPassword, obscureText: true),
+                          ),
+                          const SizedBox(height: 16),
+                          FieldLabel(label: 'Full name', child: TextField(controller: name)),
+                          const SizedBox(height: 12),
+                          FieldLabel(label: 'Email / Username', child: TextField(controller: email)),
+                          const SizedBox(height: 12),
+                          FieldLabel(
+                            label: 'Role',
+                            child: InputDecorator(
+                              decoration: const InputDecoration(),
+                              child: Text(user?.role ?? ''),
                             ),
-                            const SizedBox(height: 12),
-                            FieldLabel(
-                              label: 'New password',
-                              child: TextField(controller: newPassword, obscureText: true),
-                            ),
-                            const SizedBox(height: 16),
-                            JaButton(label: 'Update password', primary: true, onPressed: savePassword),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 16),
+                          JaButton(
+                            label: saving ? 'Saving...' : 'Save profile',
+                            primary: true,
+                            onPressed: saving ? null : saveProfile,
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    );
+                    final passwordCard = JaPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Password', style: Theme.of(context).textTheme.titleLarge),
+                          const SizedBox(height: 12),
+                          if (passwordMessage.isNotEmpty) ...[
+                            JaAlert(passwordMessage, success: true),
+                            const SizedBox(height: 12),
+                          ],
+                          FieldLabel(
+                            label: 'Current password',
+                            child: TextField(controller: currentPassword, obscureText: true),
+                          ),
+                          const SizedBox(height: 12),
+                          FieldLabel(
+                            label: 'New password',
+                            child: TextField(controller: newPassword, obscureText: true),
+                          ),
+                          const SizedBox(height: 16),
+                          JaButton(label: 'Update password', primary: true, onPressed: savePassword),
+                        ],
+                      ),
+                    );
+                    if (isCompact(context)) {
+                      return Column(
+                        children: [
+                          profileCard,
+                          const SizedBox(height: 16),
+                          passwordCard,
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: profileCard),
+                        const SizedBox(width: 16),
+                        Expanded(child: passwordCard),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 16),
                 JaPanel(child: _printerPanel()),
@@ -280,8 +292,7 @@ class _AccountScreenState extends State<AccountScreen> {
             ? 'Connected to $printerName. Receipts and barcodes print here with no printer picker.'
             : printerName.isNotEmpty
                 ? 'Will print to $printerName over Bluetooth. Pair it in system Bluetooth settings if it is off.'
-                : 'Pair the GOOJPRT in Bluetooth settings (PIN 0000 or 1234). The app connects automatically — no printer dialog.';
-    final others = pairedPrinters.where((item) => item.name != printerName || printerName.isEmpty).toList();
+                : 'Pair the printer in Bluetooth settings, allow Nearby devices, then tap PT265_DAD5 below if needed.';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,19 +324,25 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
           ],
         ),
-        if (others.isNotEmpty) ...[
+        if (pairedPrinters.isNotEmpty) ...[
           const SizedBox(height: 12),
           const Text(
-            'If the wrong Bluetooth device was chosen, tap the GOOJPRT below. Print still skips the system picker.',
+            'Tap PT265_DAD5 once. After that, Print sends to it with no picker.',
             style: TextStyle(color: JaColors.muted, fontSize: 12),
           ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: others
+            children: pairedPrinters
                 .map(
                   (item) => OutlinedButton(
+                    style: printerName == item.name
+                        ? OutlinedButton.styleFrom(
+                            foregroundColor: JaColors.forest,
+                            side: const BorderSide(color: JaColors.forest),
+                          )
+                        : null,
                     onPressed: () async {
                       try {
                         await BluetoothPrinter.instance.usePrinter(item);

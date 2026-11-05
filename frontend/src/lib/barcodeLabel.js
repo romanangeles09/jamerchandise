@@ -1,4 +1,4 @@
-import { code128Svg } from "./code128";
+import { barcodeCaption, code128Svg } from "./code128";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -9,11 +9,17 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-export function printBarcodeLabel({ name, sku, barcode }) {
+export function printBarcodeLabel({ name, price, barcode, copies = 1 }) {
   const code = String(barcode || "").trim();
   if (!code) return;
 
-  const svg = code128Svg(code, { height: 52, moduleWidth: 1.5 });
+  const count = Math.min(200, Math.max(1, Math.floor(Number(copies) || 1)));
+  const caption = barcodeCaption(name, price);
+  const svg = code128Svg(code, { height: 52, moduleWidth: 1.5, label: caption });
+  const pages = Array.from(
+    { length: count },
+    () => `<div class="label"><div class="barcode">${svg}</div></div>`
+  ).join("");
   const html = `<!doctype html>
 <html>
   <head>
@@ -24,12 +30,14 @@ export function printBarcodeLabel({ name, sku, barcode }) {
       html, body {
         margin: 0;
         padding: 0;
-        width: 50mm;
-        height: 30mm;
       }
       .label {
-        width: 47mm;
-        height: 27mm;
+        box-sizing: border-box;
+        width: 50mm;
+        height: 30mm;
+        padding: 1.5mm;
+        page-break-after: always;
+        break-after: page;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -38,29 +46,16 @@ export function printBarcodeLabel({ name, sku, barcode }) {
         color: #111;
         text-align: center;
       }
-      .name {
-        font-size: 9px;
-        font-weight: 700;
-        line-height: 1.1;
-        max-width: 46mm;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+      .label:last-child {
+        page-break-after: auto;
+        break-after: auto;
       }
-      .barcode { width: 46mm; margin: 1mm 0 0; }
-      .barcode svg { width: 100%; height: 16mm; }
-      .sku {
-        font-size: 8px;
-        margin-top: 1mm;
-      }
+      .barcode { width: 46mm; }
+      .barcode svg { width: 100%; height: auto; max-height: 24mm; }
     </style>
   </head>
   <body>
-    <div class="label">
-      <div class="name">${escapeHtml(name || "JA Merchandise")}</div>
-      <div class="barcode">${svg}</div>
-      ${sku ? `<div class="sku">${escapeHtml(sku)}</div>` : ""}
-    </div>
+    ${pages}
   </body>
 </html>`;
 
@@ -77,9 +72,26 @@ export function printBarcodeLabel({ name, sku, barcode }) {
   doc.open();
   doc.write(html);
   doc.close();
-  const cleanup = () => frame.remove();
-  frame.contentWindow.focus();
-  frame.contentWindow.print();
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    frame.remove();
+  };
+
+  const runPrint = () => {
+    try {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } catch (_) {
+      cleanup();
+    }
+  };
+
   frame.contentWindow.addEventListener("afterprint", cleanup);
-  setTimeout(cleanup, 2000);
+  // Keep the iframe alive long enough for multi-copy print jobs.
+  setTimeout(cleanup, Math.max(15000, count * 1500));
+  // Wait a tick so the iframe finishes layout before print.
+  setTimeout(runPrint, 100);
 }

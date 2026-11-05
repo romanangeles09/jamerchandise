@@ -62,6 +62,7 @@ export default function Inventory() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [productForm, setProductForm] = useState(null);
+  const [barcodeCopies, setBarcodeCopies] = useState(1);
   const [categoryForm, setCategoryForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -171,6 +172,7 @@ export default function Inventory() {
               onClick={() => {
                 const category = categories[0]?._id || "";
                 setError("");
+                setBarcodeCopies(1);
                 const sku = nextSku(category, products, categories);
                 setProductForm({
                   ...emptyProduct,
@@ -234,7 +236,7 @@ export default function Inventory() {
                     </td>
                     <td>
                       <strong>{product.name}</strong>
-                      <small className="block">{product.sku}</small>
+                      {product.alias ? <small className="block">{product.alias}</small> : null}
                     </td>
                     <td>{product.category?.name}</td>
                     <td>{peso(product.retailPrice)}</td>
@@ -256,6 +258,7 @@ export default function Inventory() {
                         type="button"
                         onClick={() => {
                           setError("");
+                          setBarcodeCopies(1);
                           setProductForm({
                             ...emptyProduct,
                             ...product,
@@ -329,29 +332,38 @@ export default function Inventory() {
                 placeholder="Optional"
               />
             </label>
-            <label>
-              SKU
-              <input value={productForm.sku} placeholder="Auto" disabled />
-            </label>
             <div className="full">
               <span className="field-caption">Barcode</span>
               <div className="barcode-card">
-                <Code128 value={productForm.barcode} />
+                <Code128 value={productForm.barcode} name={productForm.name} price={productForm.retailPrice} />
               </div>
-              <button
-                type="button"
-                className="btn full barcode-print-btn"
-                disabled={!productForm.barcode}
-                onClick={() =>
-                  printBarcodeLabel({
-                    name: productForm.name,
-                    sku: productForm.sku,
-                    barcode: productForm.barcode,
-                  })
-                }
-              >
-                Print barcode
-              </button>
+              <div className="barcode-print-row">
+                <label className="barcode-copies">
+                  Copies
+                  <input
+                    type="number"
+                    min="1"
+                    max="200"
+                    value={barcodeCopies}
+                    onChange={(event) => setBarcodeCopies(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn barcode-print-btn"
+                  disabled={!productForm.barcode}
+                  onClick={() =>
+                    printBarcodeLabel({
+                      name: productForm.name,
+                      price: productForm.retailPrice,
+                      barcode: productForm.barcode,
+                      copies: barcodeCopies,
+                    })
+                  }
+                >
+                  Print barcode
+                </button>
+              </div>
             </div>
             <label>
               Category

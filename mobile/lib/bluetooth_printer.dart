@@ -133,8 +133,11 @@ class BluetoothPrinter {
     }
     target ??= _pickGoojprt(devices);
     if (target == null) {
+      final names = devices.map((item) => item.name.trim()).where((item) => item.isNotEmpty).join(', ');
       throw PrinterException(
-        'No GOOJPRT printer found among paired Bluetooth devices. Pair it in system Bluetooth settings, then print again.',
+        names.isEmpty
+            ? 'No GOOJPRT printer found among paired Bluetooth devices. Open Account Setting and tap PT265_DAD5.'
+            : 'Open Account Setting and tap your printer. Paired: $names',
       );
     }
     await _connectTo(target.macAdress, target.name);
@@ -154,31 +157,23 @@ class BluetoothPrinter {
   }
 
   Future<void> _ensureReady() async {
-    if (!_skipsBluetoothToggle && !await _bluetoothOn()) {
+    if (_needsRuntimeBluetoothPermission) {
+      final granted = await PrintBluetoothThermal.isPermissionBluetoothGranted;
+      if (!granted) {
+        throw PrinterException(
+          'Allow Nearby devices / Bluetooth for JA Merchandise, then try again.',
+        );
+      }
+    }
+    if (_needsRuntimeBluetoothPermission && !await PrintBluetoothThermal.bluetoothEnabled) {
       throw PrinterException('Turn on Bluetooth, then try again.');
     }
-    if (!_skipsBluetoothToggle && !await _permissionGranted()) {
-      throw PrinterException('Allow Bluetooth so JA POS can print to the GOOJPRT printer.');
-    }
   }
 
-  bool get _skipsBluetoothToggle => defaultTargetPlatform == TargetPlatform.windows;
-
-  Future<bool> _bluetoothOn() async {
-    try {
-      return await PrintBluetoothThermal.bluetoothEnabled;
-    } catch (_) {
-      return true;
-    }
-  }
-
-  Future<bool> _permissionGranted() async {
-    try {
-      return await PrintBluetoothThermal.isPermissionBluetoothGranted;
-    } catch (_) {
-      return true;
-    }
-  }
+  bool get _needsRuntimeBluetoothPermission =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
 
   BluetoothInfo? _pickGoojprt(List<BluetoothInfo> devices) {
     BluetoothInfo? best;
@@ -196,12 +191,12 @@ class BluetoothPrinter {
   }
 
   int _score(String raw) {
-    final name = raw.toLowerCase();
+    final name = raw.toLowerCase().replaceAll(RegExp(r'[\s\-_]+'), '');
     if (name.contains('goojprt')) return 100;
+    if (RegExp(r'pt\d{2,}').hasMatch(name)) return 95;
     if (name.contains('mtp')) return 90;
-    if (name.contains('pt-210') || name.contains('pt210')) return 90;
-    if (name.contains('pos58') || name.contains('pos80') || name.contains('pos-58')) return 80;
-    if (name.contains('jp-58') || name.contains('jp58')) return 80;
+    if (name.contains('pos58') || name.contains('pos80')) return 80;
+    if (name.contains('jp58')) return 80;
     if (name.contains('thermal')) return 50;
     if (name.contains('printer')) return 40;
     return 0;

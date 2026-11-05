@@ -53,7 +53,24 @@ export function code128Bits(value) {
   return `${codes.map((code) => PATTERNS[code]).join("")}11`;
 }
 
-export function code128Svg(value, { height = 64, moduleWidth = 2 } = {}) {
+function escapeSvgText(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+export function barcodeCaption(name, price) {
+  const title = String(name || "").trim() || "JA Merchandise";
+  const amount = Number(price);
+  if (!Number.isFinite(amount) || String(price ?? "").trim() === "") return title;
+  const priceText = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return `${title} Php ${priceText}`;
+}
+
+export function code128Svg(value, { height = 64, moduleWidth = 2, label } = {}) {
   const bits = code128Bits(value);
   if (!bits) return "";
   const width = bits.length * moduleWidth;
@@ -65,10 +82,11 @@ export function code128Svg(value, { height = 64, moduleWidth = 2 } = {}) {
     }
     x += moduleWidth;
   }
+  const caption = label == null ? value : label;
   const labelY = height + 18;
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Barcode ${value}" viewBox="0 0 ${width} ${labelY + 4}" width="${width}" height="${labelY + 4}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Barcode ${escapeSvgText(value)}" viewBox="0 0 ${width} ${labelY + 4}" width="${width}" height="${labelY + 4}">
     <rect width="${width}" height="${labelY + 4}" fill="#fff" />
     <g fill="#12211b">${bars}</g>
-    <text x="${width / 2}" y="${labelY}" text-anchor="middle" font-size="14" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#12211b">${value}</text>
+    <text x="${width / 2}" y="${labelY}" text-anchor="middle" font-size="13" font-family="ui-sans-serif, system-ui, Arial, sans-serif" fill="#12211b">${escapeSvgText(caption)}</text>
   </svg>`;
 }

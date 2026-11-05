@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api.dart';
 import '../barcode_label.dart';
 import '../bluetooth_printer.dart';
 import '../code128.dart';
+import '../layout.dart';
 import '../models.dart';
 import '../money.dart';
 import '../theme.dart';
@@ -96,7 +98,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     await showJaDialog(
       context: context,
       title: product == null ? 'New product' : 'Edit product',
-      width: 640,
+      width: isCompact(context) ? 520 : 640,
       child: _ProductForm(
         product: product,
         products: products,
@@ -116,163 +118,345 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        PageHeader(
-          eyebrow: 'Stock room',
-          title: 'Inventory',
-          trailing: JaButton(
-            label: tab == 'products' ? 'Add product' : 'Add category',
-            primary: true,
-            onPressed: () => tab == 'products' ? openProduct() : openCategory(),
-          ),
-        ),
-        SegmentedChoice(
-          value: tab,
-          options: const [('products', 'Products'), ('categories', 'Categories')],
-          onChanged: (value) => setState(() => tab = value),
-        ),
-        const SizedBox(height: 16),
-        if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 12)],
-        if (tab == 'products') ...[
-          TextField(
-            decoration: const InputDecoration(hintText: 'Search products'),
-            onChanged: (value) => setState(() => query = value),
-          ),
-          const SizedBox(height: 16),
-        ],
-        Expanded(
-          child: JaPanel(
-            child: SingleChildScrollView(
-              child: tab == 'products'
-                  ? JaTable(
-                      columns: const [
-                        DataColumn(label: Text('')),
-                        DataColumn(label: Text('Product')),
-                        DataColumn(label: Text('Category')),
-                        DataColumn(label: Text('Retail')),
-                        DataColumn(label: Text('Wholesale')),
-                        DataColumn(label: Text('Stock')),
-                        DataColumn(label: Text('')),
-                      ],
-                      rows: filtered
-                          .map(
-                            (product) => DataRow(
-                              cells: [
-                                DataCell(
-                                  ProductPhoto(
-                                    name: product.name,
-                                    hasImage: product.hasImage,
-                                    imageUrl: product.imageUrl,
-                                  ),
-                                ),
-                                DataCell(
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                      Text(product.sku, style: const TextStyle(color: JaColors.muted, fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                                DataCell(Text(product.category?.name ?? '')),
-                                DataCell(Text(peso(product.retailPrice))),
-                                DataCell(
-                                  Text(
-                                    product.hasWholesale
-                                        ? '${peso(product.wholesalePrice)}\nmin ${product.wholesaleMin}'
-                                        : '—',
-                                  ),
-                                ),
-                                DataCell(
-                                  Text(
-                                    '${product.stock} ${product.unit}',
-                                    style: TextStyle(
-                                      color: product.stock <= product.reorderLevel ? JaColors.warn : JaColors.ink,
-                                      fontWeight: product.stock <= product.reorderLevel ? FontWeight.w700 : FontWeight.w400,
-                                    ),
-                                  ),
-                                ),
-                                DataCell(
-                                  Row(
-                                    children: [
-                                      TextButton(onPressed: () => openProduct(product), child: const Text('Edit')),
-                                      TextButton(
-                                        onPressed: () async {
-                                          if (!await confirmAction(context, 'Delete this product?')) return;
-                                          if (!context.mounted) return;
-                                          await context.read<ApiClient>().deleteProduct(product.id);
-                                          await load();
-                                        },
-                                        child: const Text('Delete', style: TextStyle(color: JaColors.danger)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          .toList(),
-                    )
-                  : JaTable(
-                      columns: const [
-                        DataColumn(label: Text('Category')),
-                        DataColumn(label: Text('Products')),
-                        DataColumn(label: Text('')),
-                      ],
-                      rows: categories
-                          .map(
-                            (item) => DataRow(
-                              cells: [
-                                DataCell(
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                      Text(
-                                        item.description.isEmpty ? 'No description' : item.description,
-                                        style: const TextStyle(color: JaColors.muted, fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                DataCell(Text('${item.productCount}')),
-                                DataCell(
-                                  Row(
-                                    children: [
-                                      TextButton(onPressed: () => openCategory(item), child: const Text('Edit')),
-                                      TextButton(
-                                        onPressed: () async {
-                                          if (!await confirmAction(context, 'Delete this category?')) return;
-                                          if (!context.mounted) return;
-                                          try {
-                                            await context.read<ApiClient>().deleteCategory(item.id);
-                                            await load();
-                                          } catch (err) {
-                                            setState(
-                                              () => error = err is ApiException
-                                                  ? err.message
-                                                  : 'Unable to delete category.',
-                                            );
-                                          }
-                                        },
-                                        child: const Text('Delete', style: TextStyle(color: JaColors.danger)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          .toList(),
-                    ),
+        if (compact)
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedChoice(
+                  value: tab,
+                  options: const [('products', 'Products'), ('categories', 'Categories')],
+                  onChanged: (value) => setState(() => tab = value),
+                ),
+              ),
+              const SizedBox(width: 8),
+              JaButton(
+                label: tab == 'products' ? 'Add product' : 'Add category',
+                primary: true,
+                onPressed: () => tab == 'products' ? openProduct() : openCategory(),
+              ),
+            ],
+          )
+        else ...[
+          PageHeader(
+            eyebrow: 'Stock room',
+            title: 'Inventory',
+            trailing: JaButton(
+              label: tab == 'products' ? 'Add product' : 'Add category',
+              primary: true,
+              onPressed: () => tab == 'products' ? openProduct() : openCategory(),
             ),
           ),
+          SegmentedChoice(
+            value: tab,
+            options: const [('products', 'Products'), ('categories', 'Categories')],
+            onChanged: (value) => setState(() => tab = value),
+          ),
+        ],
+        SizedBox(height: compact ? 6 : 16),
+        if (error.isNotEmpty) ...[JaAlert(error), SizedBox(height: compact ? 6 : 12)],
+        if (tab == 'products') ...[
+          TextField(
+            decoration: InputDecoration(hintText: 'Search products', isDense: compact),
+            onChanged: (value) => setState(() => query = value),
+          ),
+          SizedBox(height: compact ? 6 : 16),
+        ],
+        Expanded(
+          child: compact
+              ? (tab == 'products' ? _productCards() : _categoryCards())
+              : JaPanel(
+                  padding: const EdgeInsets.all(18),
+                  child: SingleChildScrollView(
+                    child: tab == 'products' ? _productTable() : _categoryTable(),
+                  ),
+                ),
         ),
       ],
+    );
+  }
+
+  Widget _productCards() {
+    if (filtered.isEmpty) {
+      return const Align(
+        alignment: Alignment.topLeft,
+        child: Text('No products yet.', style: TextStyle(color: JaColors.muted)),
+      );
+    }
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      itemCount: filtered.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final product = filtered[index];
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: JaColors.line),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ProductPhoto(
+                    name: product.name,
+                    hasImage: product.hasImage,
+                    imageUrl: product.imageUrl,
+                    size: 40,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(product.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(
+                          [
+                            if (product.alias.trim().isNotEmpty) product.alias,
+                            product.category?.name ?? '',
+                          ].where((s) => s.isNotEmpty).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Retail ${peso(product.retailPrice)} · Stock ${product.stock} ${product.unit}',
+                style: TextStyle(
+                  color: product.stock <= product.reorderLevel ? JaColors.warn : JaColors.ink,
+                  fontWeight: product.stock <= product.reorderLevel ? FontWeight.w700 : FontWeight.w400,
+                  fontSize: 13,
+                ),
+              ),
+              if (product.hasWholesale)
+                Text(
+                  'Wholesale ${peso(product.wholesalePrice)} · min ${product.wholesaleMin}',
+                  style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  JaButton(label: 'Edit', onPressed: () => openProduct(product)),
+                  const SizedBox(width: 8),
+                  JaButton(
+                    label: 'Delete',
+                    onPressed: () async {
+                      if (!await confirmAction(context, 'Delete this product?')) return;
+                      if (!context.mounted) return;
+                      await context.read<ApiClient>().deleteProduct(product.id);
+                      await load();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _categoryCards() {
+    if (categories.isEmpty) {
+      return const Align(
+        alignment: Alignment.topLeft,
+        child: Text('No categories yet.', style: TextStyle(color: JaColors.muted)),
+      );
+    }
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      itemCount: categories.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = categories[index];
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: JaColors.line),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(
+                item.description.isEmpty ? 'No description' : item.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: JaColors.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text('${item.productCount} products', style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  JaButton(label: 'Edit', onPressed: () => openCategory(item)),
+                  const SizedBox(width: 8),
+                  JaButton(
+                    label: 'Delete',
+                    onPressed: () async {
+                      if (!await confirmAction(context, 'Delete this category?')) return;
+                      if (!context.mounted) return;
+                      try {
+                        await context.read<ApiClient>().deleteCategory(item.id);
+                        await load();
+                      } catch (err) {
+                        setState(
+                          () => error = err is ApiException ? err.message : 'Unable to delete category.',
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _productTable() {
+    return JaTable(
+      columns: const [
+        DataColumn(label: Text('')),
+        DataColumn(label: Text('Product')),
+        DataColumn(label: Text('Category')),
+        DataColumn(label: Text('Retail')),
+        DataColumn(label: Text('Wholesale')),
+        DataColumn(label: Text('Stock')),
+        DataColumn(label: Text('')),
+      ],
+      rows: filtered
+          .map(
+            (product) => DataRow(
+              cells: [
+                DataCell(
+                  ProductPhoto(
+                    name: product.name,
+                    hasImage: product.hasImage,
+                    imageUrl: product.imageUrl,
+                  ),
+                ),
+                DataCell(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      if (product.alias.trim().isNotEmpty)
+                        Text(product.alias, style: const TextStyle(color: JaColors.muted, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                DataCell(Text(product.category?.name ?? '')),
+                DataCell(Text(peso(product.retailPrice))),
+                DataCell(
+                  Text(
+                    product.hasWholesale
+                        ? '${peso(product.wholesalePrice)}\nmin ${product.wholesaleMin}'
+                        : '—',
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    '${product.stock} ${product.unit}',
+                    style: TextStyle(
+                      color: product.stock <= product.reorderLevel ? JaColors.warn : JaColors.ink,
+                      fontWeight: product.stock <= product.reorderLevel ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                DataCell(
+                  Row(
+                    children: [
+                      TextButton(onPressed: () => openProduct(product), child: const Text('Edit')),
+                      TextButton(
+                        onPressed: () async {
+                          if (!await confirmAction(context, 'Delete this product?')) return;
+                          if (!context.mounted) return;
+                          await context.read<ApiClient>().deleteProduct(product.id);
+                          await load();
+                        },
+                        child: const Text('Delete', style: TextStyle(color: JaColors.danger)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Widget _categoryTable() {
+    return JaTable(
+      columns: const [
+        DataColumn(label: Text('Category')),
+        DataColumn(label: Text('Products')),
+        DataColumn(label: Text('')),
+      ],
+      rows: categories
+          .map(
+            (item) => DataRow(
+              cells: [
+                DataCell(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(
+                        item.description.isEmpty ? 'No description' : item.description,
+                        style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                DataCell(Text('${item.productCount}')),
+                DataCell(
+                  Row(
+                    children: [
+                      TextButton(onPressed: () => openCategory(item), child: const Text('Edit')),
+                      TextButton(
+                        onPressed: () async {
+                          if (!await confirmAction(context, 'Delete this category?')) return;
+                          if (!context.mounted) return;
+                          try {
+                            await context.read<ApiClient>().deleteCategory(item.id);
+                            await load();
+                          } catch (err) {
+                            setState(
+                              () => error = err is ApiException
+                                  ? err.message
+                                  : 'Unable to delete category.',
+                            );
+                          }
+                        },
+                        child: const Text('Delete', style: TextStyle(color: JaColors.danger)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -316,8 +500,10 @@ class _ProductFormState extends State<_ProductForm> {
     ),
   );
   late final stock = TextEditingController(text: widget.product == null ? '' : '${widget.product!.stock}');
+  late final barcodeCopies = TextEditingController(text: '1');
   bool isActive = true;
   bool saving = false;
+  bool printingBarcode = false;
   String error = '';
 
   @override
@@ -326,11 +512,17 @@ class _ProductFormState extends State<_ProductForm> {
     isActive = widget.product?.isActive ?? true;
     wholesale.addListener(_syncCost);
     wholesaleMin.addListener(_syncCost);
+    name.addListener(_refreshBarcodeLabel);
+    retail.addListener(_refreshBarcodeLabel);
   }
 
   void _syncCost() {
     final next = derivedCost(wholesale.text, wholesaleMin.text);
     if (cost.text != next) cost.text = next;
+  }
+
+  void _refreshBarcodeLabel() {
+    if (mounted) setState(() {});
   }
 
   void _syncSku() {
@@ -342,6 +534,8 @@ class _ProductFormState extends State<_ProductForm> {
   void dispose() {
     wholesale.removeListener(_syncCost);
     wholesaleMin.removeListener(_syncCost);
+    name.removeListener(_refreshBarcodeLabel);
+    retail.removeListener(_refreshBarcodeLabel);
     name.dispose();
     alias.dispose();
     sku.dispose();
@@ -352,6 +546,7 @@ class _ProductFormState extends State<_ProductForm> {
     wholesaleMin.dispose();
     cost.dispose();
     stock.dispose();
+    barcodeCopies.dispose();
     super.dispose();
   }
 
@@ -388,27 +583,37 @@ class _ProductFormState extends State<_ProductForm> {
     }
   }
 
+  Widget _pair(Widget left, Widget right) {
+    if (isCompact(context)) {
+      return Column(
+        children: [
+          left,
+          const SizedBox(height: 12),
+          right,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: left),
+        const SizedBox(width: 12),
+        Expanded(child: right),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         if (error.isNotEmpty) ...[JaAlert(error), const SizedBox(height: 12)],
-        Row(
-          children: [
-            Expanded(child: FieldLabel(label: 'Name', child: TextField(controller: name))),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FieldLabel(
-                label: 'Alias',
-                child: TextField(controller: alias, decoration: const InputDecoration(hintText: 'Optional')),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        FieldLabel(
-          label: 'SKU',
-          child: TextField(controller: sku, enabled: false, decoration: const InputDecoration(hintText: 'Auto')),
+        _pair(
+          FieldLabel(label: 'Name', child: TextField(controller: name)),
+          FieldLabel(
+            label: 'Alias',
+            child: TextField(controller: alias, decoration: const InputDecoration(hintText: 'Optional')),
+          ),
         ),
         const SizedBox(height: 12),
         FieldLabel(
@@ -416,89 +621,104 @@ class _ProductFormState extends State<_ProductForm> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Code128Graphic(value: barcode.text),
+              Code128Graphic(
+                value: barcode.text,
+                label: barcodeCaption(name.text, retail.text),
+              ),
               const SizedBox(height: 8),
-              JaButton(
-                label: 'Print barcode',
-                expanded: true,
-                icon: Icons.print,
-                onPressed: barcode.text.trim().isEmpty
-                    ? null
-                    : () async {
-                        setState(() => error = '');
-                        try {
-                          await printBarcodeLabel(name: name.text, sku: sku.text, barcode: barcode.text);
-                        } catch (err) {
-                          if (!mounted) return;
-                          setState(() {
-                            error = err is PrinterException ? err.message : 'Unable to print barcode.';
-                          });
-                        }
-                      },
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  SizedBox(
+                    width: isCompact(context) ? 84 : 96,
+                    child: FieldLabel(
+                      label: 'Copies',
+                      child: TextField(
+                        controller: barcodeCopies,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: JaButton(
+                      label: printingBarcode ? 'Printing...' : 'Print barcode',
+                      expanded: true,
+                      icon: Icons.print,
+                      onPressed: barcode.text.trim().isEmpty || printingBarcode
+                          ? null
+                          : () async {
+                              setState(() {
+                                error = '';
+                                printingBarcode = true;
+                              });
+                              try {
+                                await printBarcodeLabel(
+                                  name: name.text,
+                                  price: retail.text,
+                                  barcode: barcode.text,
+                                  copies: barcodeCopies.text,
+                                );
+                              } catch (err) {
+                                if (!mounted) return;
+                                setState(() {
+                                  error = err is PrinterException ? err.message : 'Unable to print barcode.';
+                                });
+                              } finally {
+                                if (mounted) setState(() => printingBarcode = false);
+                              }
+                            },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: FieldLabel(
-                label: 'Category',
-                child: DropdownButtonFormField<String>(
-                  initialValue: widget.categories.any((item) => item.id == category) ? category : null,
-                  items: widget.categories
-                      .map((item) => DropdownMenuItem(value: item.id, child: Text(item.name)))
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() => category = value ?? '');
-                    _syncSku();
-                  },
-                ),
-              ),
+        _pair(
+          FieldLabel(
+            label: 'Category',
+            child: DropdownButtonFormField<String>(
+              initialValue: widget.categories.any((item) => item.id == category) ? category : null,
+              items: widget.categories
+                  .map((item) => DropdownMenuItem(value: item.id, child: Text(item.name)))
+                  .toList(),
+              onChanged: (value) {
+                setState(() => category = value ?? '');
+                _syncSku();
+              },
             ),
-            const SizedBox(width: 12),
-            Expanded(child: FieldLabel(label: 'Unit', child: TextField(controller: unit))),
-          ],
+          ),
+          FieldLabel(label: 'Unit', child: TextField(controller: unit)),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: FieldLabel(label: 'Stock', child: TextField(controller: stock, keyboardType: TextInputType.number))),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FieldLabel(
-                label: 'Retail price',
-                child: TextField(controller: retail, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-              ),
-            ),
-          ],
+        _pair(
+          FieldLabel(label: 'Stock', child: TextField(controller: stock, keyboardType: TextInputType.number)),
+          FieldLabel(
+            label: 'Retail price',
+            child: TextField(controller: retail, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+          ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: FieldLabel(
-                label: 'Wholesale price',
-                child: TextField(
-                  controller: wholesale,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(hintText: 'Optional'),
-                ),
-              ),
+        _pair(
+          FieldLabel(
+            label: 'Wholesale price',
+            child: TextField(
+              controller: wholesale,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(hintText: 'Optional'),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FieldLabel(
-                label: 'Wholesale min qty',
-                child: TextField(
-                  controller: wholesaleMin,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: 'Optional'),
-                ),
-              ),
+          ),
+          FieldLabel(
+            label: 'Wholesale min qty',
+            child: TextField(
+              controller: wholesaleMin,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(hintText: 'Optional'),
             ),
-          ],
+          ),
         ),
         const SizedBox(height: 12),
         FieldLabel(
