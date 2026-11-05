@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api, { getErrorMessage } from "../lib/api";
 import Code128 from "../components/Code128";
+import Pagination from "../components/Pagination";
 import { printBarcodeLabel } from "../lib/barcodeLabel";
 import { nextCode128Barcode } from "../lib/code128";
-import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import Modal from "../components/Modal";
 
@@ -54,67 +54,94 @@ function derivedCost(wholesalePrice, wholesaleMinQty) {
 }
 
 const emptyCategory = { name: "", description: "" };
+const PAGE_SIZE = 25;
 
 export default function Inventory() {
   const [tab, setTab] = useState("products");
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [productForm, setProductForm] = useState(null);
   const [barcodeCopies, setBarcodeCopies] = useState(1);
   const [categoryForm, setCategoryForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    const [productRes, categoryRes] = await Promise.all([api.get("/products"), api.get("/categories")]);
-    setProducts(productRes.data);
+  async function loadCategories() {
+    const categoryRes = await api.get("/categories");
     setCategories(categoryRes.data);
   }
 
+  async function loadProducts(nextPage = page, nextQuery = query) {
+    const productRes = await api.get("/products", {
+      params: {
+        page: nextPage,
+        limit: PAGE_SIZE,
+        ...(nextQuery.trim() ? { q: nextQuery.trim() } : {}),
+      },
+    });
+    const data = productRes.data;
+    setProducts(data.items || []);
+    setPage(data.page || 1);
+    setPages(data.pages || 1);
+    setTotal(data.total || 0);
+  }
+
+  async function load(nextPage = page, nextQuery = query) {
+    await Promise.all([loadProducts(nextPage, nextQuery), loadCategories()]);
+  }
+
   useEffect(() => {
-    load().catch((err) => setError(getErrorMessage(err, "Unable to load inventory.")));
+    load(1, "").catch((err) => setError(getErrorMessage(err, "Unable to load inventory.")));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredProducts = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return products;
-    return products.filter(
-      (product) =>
-        product.name.toLowerCase().includes(term) ||
-        String(product.alias || "").toLowerCase().includes(term) ||
-        product.sku.toLowerCase().includes(term) ||
-        String(product.barcode || "").toLowerCase().includes(term) ||
-        product.category?.name.toLowerCase().includes(term)
-    );
-  }, [products, query]);
+  useEffect(() => {
+    if (tab !== "products") return undefined;
+    const handle = window.setTimeout(() => {
+      loadProducts(1, query).catch((err) => setError(getErrorMessage(err, "Unable to load products.")));
+    }, 250);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   async function saveProduct(event) {
     event.preventDefault();
     setSaving(true);
     setError("");
     try {
-      const form = new FormData();
-      form.append("name", productForm.name);
-      form.append("alias", productForm.alias || "");
-      form.append("sku", productForm.sku);
-      form.append("barcode", productForm.barcode || "");
-      form.append("category", productForm.category);
-      form.append("unit", productForm.unit || "pc");
-      form.append("retailPrice", String(Number(productForm.retailPrice)));
-      form.append("wholesalePrice", productForm.wholesalePrice === "" || productForm.wholesalePrice == null ? "" : String(Number(productForm.wholesalePrice)));
-      form.append("wholesaleMinQty", productForm.wholesaleMinQty === "" || productForm.wholesaleMinQty == null ? "" : String(Number(productForm.wholesaleMinQty)));
-      form.append("costPrice", productForm.costPrice === "" || productForm.costPrice == null ? "" : String(Number(productForm.costPrice)));
-      form.append("stock", String(Number(productForm.stock || 0)));
-      form.append("reorderLevel", String(Number(productForm.reorderLevel || 10)));
-      form.append("isActive", productForm.isActive !== false ? "true" : "false");
+      const payload = {
+        name: productForm.name,
+        alias: productForm.alias || "",
+        sku: productForm.sku,
+        barcode: productForm.barcode || "",
+        category: productForm.category,
+        unit: productForm.unit || "pc",
+        retailPrice: Number(productForm.retailPrice),
+        wholesalePrice:
+          productForm.wholesalePrice === "" || productForm.wholesalePrice == null
+            ? ""
+            : Number(productForm.wholesalePrice),
+        wholesaleMinQty:
+          productForm.wholesaleMinQty === "" || productForm.wholesaleMinQty == null
+            ? ""
+            : Number(productForm.wholesaleMinQty),
+        costPrice:
+          productForm.costPrice === "" || productForm.costPrice == null ? "" : Number(productForm.costPrice),
+        stock: Number(productForm.stock || 0),
+        reorderLevel: Number(productForm.reorderLevel || 10),
+        isActive: productForm.isActive !== false,
+      };
       if (productForm._id) {
-        await api.put(`/products/${productForm._id}`, form);
+        await api.put(`/products/${productForm._id}`, payload);
       } else {
-        await api.post("/products", form);
+        await api.post("/products", payload);
       }
       setProductForm(null);
-      await load();
+      await load(1, query);
     } catch (err) {
       setError(getErrorMessage(err, "Unable to save product."));
     } finally {
@@ -144,7 +171,7 @@ export default function Inventory() {
   async function removeProduct(id) {
     if (!window.confirm("Delete this product?")) return;
     await api.delete(`/products/${id}`);
-    await load();
+    await loadProducts(page, query);
   }
 
   async function removeCategory(id) {
@@ -215,7 +242,6 @@ export default function Inventory() {
             <table>
               <thead>
                 <tr>
-                  <th />
                   <th>Product</th>
                   <th>Category</th>
                   <th>Retail</th>
@@ -225,63 +251,72 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => (
-                  <tr key={product._id}>
-                    <td className="thumb-cell">
-                      {product.hasImage ? (
-                        <img src={productImageSrc(product)} alt="" className="product-thumb" />
-                      ) : (
-                        <span className="product-thumb placeholder">{product.name.slice(0, 1)}</span>
-                      )}
-                    </td>
-                    <td>
-                      <strong>{product.name}</strong>
-                      {product.alias ? <small className="block">{product.alias}</small> : null}
-                    </td>
-                    <td>{product.category?.name}</td>
-                    <td>{peso(product.retailPrice)}</td>
-                    <td>
-                      {Number(product.wholesalePrice) > 0 ? (
-                        <>
-                          {peso(product.wholesalePrice)}
-                          <small className="block">min {product.wholesaleMinQty || 1}</small>
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className={product.stock <= product.reorderLevel ? "warn" : ""}>
-                      {product.stock} {product.unit}
-                    </td>
-                    <td className="row-actions">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setError("");
-                          setBarcodeCopies(1);
-                          setProductForm({
-                            ...emptyProduct,
-                            ...product,
-                            alias: product.alias || "",
-                            category: product.category?._id || product.category,
-                            wholesalePrice: product.wholesalePrice ?? "",
-                            wholesaleMinQty: product.wholesaleMinQty ?? "",
-                            costPrice: derivedCost(product.wholesalePrice ?? "", product.wholesaleMinQty ?? ""),
-                            barcode: product.barcode || nextCode128Barcode(products),
-                          });
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button type="button" className="danger-text" onClick={() => removeProduct(product._id)}>
-                        Delete
-                      </button>
+                {products.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty">
+                      No products yet.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  products.map((product) => (
+                    <tr key={product._id}>
+                      <td>
+                        <strong>{product.name}</strong>
+                        {product.alias ? <small className="block">{product.alias}</small> : null}
+                      </td>
+                      <td>{product.category?.name}</td>
+                      <td>{peso(product.retailPrice)}</td>
+                      <td>
+                        {Number(product.wholesalePrice) > 0 ? (
+                          <>
+                            {peso(product.wholesalePrice)}
+                            <small className="block">min {product.wholesaleMinQty || 1}</small>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className={product.stock <= product.reorderLevel ? "warn" : ""}>
+                        {product.stock} {product.unit}
+                      </td>
+                      <td className="row-actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError("");
+                            setBarcodeCopies(1);
+                            setProductForm({
+                              ...emptyProduct,
+                              ...product,
+                              alias: product.alias || "",
+                              category: product.category?._id || product.category,
+                              wholesalePrice: product.wholesalePrice ?? "",
+                              wholesaleMinQty: product.wholesaleMinQty ?? "",
+                              costPrice: derivedCost(product.wholesalePrice ?? "", product.wholesaleMinQty ?? ""),
+                              barcode: product.barcode || nextCode128Barcode(products),
+                            });
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button type="button" className="danger-text" onClick={() => removeProduct(product._id)}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={page}
+            pages={pages}
+            total={total}
+            onChange={(next) => {
+              loadProducts(next, query).catch((err) => setError(getErrorMessage(err, "Unable to load products.")));
+            }}
+          />
         </>
       ) : (
         <div className="table-wrap panel">

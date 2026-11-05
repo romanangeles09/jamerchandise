@@ -59,6 +59,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<Category> categories = [];
   String query = '';
   String error = '';
+  int page = 1;
+  int pages = 1;
+  int total = 0;
 
   @override
   void initState() {
@@ -66,14 +69,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
     load();
   }
 
-  Future<void> load() async {
+  Future<void> load({int? nextPage}) async {
     try {
       final api = context.read<ApiClient>();
-      final loaded = await Future.wait([api.products(), api.categories()]);
+      final productPage = await api.products(page: nextPage ?? page, limit: 25, q: query);
+      final cats = await api.categories();
       if (!mounted) return;
       setState(() {
-        products = loaded[0] as List<Product>;
-        categories = loaded[1] as List<Category>;
+        products = productPage.items;
+        categories = cats;
+        page = productPage.page;
+        pages = productPage.pages;
+        total = productPage.total;
         error = '';
       });
     } catch (err) {
@@ -82,17 +89,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
-  List<Product> get filtered {
-    final term = query.trim().toLowerCase();
-    if (term.isEmpty) return products;
-    return products.where((product) {
-      return product.name.toLowerCase().contains(term) ||
-          product.alias.toLowerCase().contains(term) ||
-          product.sku.toLowerCase().contains(term) ||
-          product.barcode.toLowerCase().contains(term) ||
-          (product.category?.name.toLowerCase().contains(term) ?? false);
-    }).toList();
-  }
+  List<Product> get filtered => products;
 
   Future<void> openProduct([Product? product]) async {
     await showJaDialog(
@@ -161,7 +158,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
         if (tab == 'products') ...[
           TextField(
             decoration: InputDecoration(hintText: 'Search products', isDense: compact),
-            onChanged: (value) => setState(() => query = value),
+            onChanged: (value) {
+              setState(() => query = value);
+              Future<void>.delayed(const Duration(milliseconds: 250), () {
+                if (!mounted || query != value) return;
+                load(nextPage: 1);
+              });
+            },
           ),
           SizedBox(height: compact ? 6 : 16),
         ],
@@ -175,6 +178,28 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                 ),
         ),
+        if (tab == 'products' && pages > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton(
+                onPressed: page <= 1 ? null : () => load(nextPage: page - 1),
+                child: const Text('Previous'),
+              ),
+              Expanded(
+                child: Text(
+                  'Page $page of $pages · $total total',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                ),
+              ),
+              TextButton(
+                onPressed: page >= pages ? null : () => load(nextPage: page + 1),
+                child: const Text('Next'),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

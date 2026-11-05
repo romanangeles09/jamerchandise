@@ -1,32 +1,43 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api, { getErrorMessage } from "../lib/api";
+import Pagination from "../components/Pagination";
 import { formatDate, peso } from "../lib/money";
 import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
+const PAGE_SIZE = 25;
+
 export default function Transactions() {
   const [sales, setSales] = useState([]);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
 
+  async function load(nextPage = 1) {
+    const res = await api.get("/sales", { params: { page: nextPage, limit: PAGE_SIZE } });
+    const data = res.data;
+    setSales(data.items || []);
+    setPage(data.page || 1);
+    setPages(data.pages || 1);
+    setTotal(data.total || 0);
+  }
+
   useEffect(() => {
-    api
-      .get("/sales", { params: { limit: 100 } })
-      .then((res) => setSales(res.data))
-      .catch((err) => setError(getErrorMessage(err, "Unable to load transactions.")));
+    load(1).catch((err) => setError(getErrorMessage(err, "Unable to load transactions.")));
   }, []);
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return sales;
-    return sales.filter((sale) =>
-      [sale.invoiceNo, sale.saleType, sale.paymentMethod, sale.cashier?.name]
-        .join(" ")
-        .toLowerCase()
-        .includes(term)
-    );
-  }, [sales, query]);
+  const term = query.trim().toLowerCase();
+  const filtered = term
+    ? sales.filter((sale) =>
+        [sale.invoiceNo, sale.saleType, sale.paymentMethod, sale.cashier?.name]
+          .join(" ")
+          .toLowerCase()
+          .includes(term)
+      )
+    : sales;
 
   return (
     <section>
@@ -88,6 +99,15 @@ export default function Transactions() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={page}
+        pages={pages}
+        total={total}
+        onChange={(next) => {
+          load(next).catch((err) => setError(getErrorMessage(err, "Unable to load transactions.")));
+        }}
+      />
 
       {selected ? (
         <Modal title={`Ticket ${selected.invoiceNo}`} onClose={() => setSelected(null)}>

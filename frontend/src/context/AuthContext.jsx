@@ -8,7 +8,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("ja_token");
+    // Migrate away from persistent login; session ends when the tab/app closes.
+    localStorage.removeItem("ja_token");
+    const token = sessionStorage.getItem("ja_token");
     if (!token) {
       setLoading(false);
       return;
@@ -18,7 +20,7 @@ export function AuthProvider({ children }) {
       .get("/auth/me")
       .then((res) => setUser(res.data.user))
       .catch(() => {
-        localStorage.removeItem("ja_token");
+        sessionStorage.removeItem("ja_token");
         setUser(null);
       })
       .finally(() => setLoading(false));
@@ -30,17 +32,20 @@ export function AuthProvider({ children }) {
       loading,
       async login(email, password) {
         const res = await api.post("/auth/login", { email, password });
-        localStorage.setItem("ja_token", res.data.token);
+        sessionStorage.setItem("ja_token", res.data.token);
+        localStorage.removeItem("ja_token");
         setUser(res.data.user);
         return res.data.user;
       },
       async loginWithPin(userId, pincode) {
         const res = await api.post("/auth/pin-login", { userId, pincode });
-        localStorage.setItem("ja_token", res.data.token);
+        sessionStorage.setItem("ja_token", res.data.token);
+        localStorage.removeItem("ja_token");
         setUser(res.data.user);
         return res.data.user;
       },
       logout() {
+        sessionStorage.removeItem("ja_token");
         localStorage.removeItem("ja_token");
         setUser(null);
       },

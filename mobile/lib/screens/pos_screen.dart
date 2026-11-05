@@ -64,10 +64,10 @@ class _PosScreenState extends State<PosScreen> {
   Future<void> load() async {
     try {
       final api = context.read<ApiClient>();
-      final loaded = await Future.wait([api.products(active: true), api.categories()]);
+      final loaded = await Future.wait([api.products(active: true, all: true), api.categories()]);
       if (!mounted) return;
       setState(() {
-        products = loaded[0] as List<Product>;
+        products = (loaded[0] as PageResult<Product>).items;
         categories = loaded[1] as List<Category>;
       });
       if (!cartReady) {

@@ -35,15 +35,18 @@ class ApiClient {
     if (token != null && token!.isNotEmpty) 'Authorization': 'Bearer $token',
   };
 
+  /// Session-only auth: never restore a token after the app process exits.
   Future<void> loadToken() async {
+    token = null;
     final prefs = await SharedPreferences.getInstance();
-    token = prefs.getString('ja_token');
+    await prefs.remove('ja_token');
   }
 
   Future<void> saveToken(String value) async {
     token = value;
+    // Keep token in memory only so closing the app always requires login again.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('ja_token', value);
+    await prefs.remove('ja_token');
   }
 
   Future<void> clearToken() async {
@@ -183,20 +186,47 @@ class ApiClient {
     );
   }
 
-  Future<List<Product>> products({bool? active}) async {
+  PageResult<T> _pageResult<T>(dynamic data, T Function(Map<String, dynamic>) mapItem) {
+    final map = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    final rawItems = map['items'] is List
+        ? map['items'] as List
+        : data is List
+            ? data
+            : const [];
+    final items = rawItems.whereType<Map>().map((item) => mapItem(Map<String, dynamic>.from(item))).toList();
+    final total = jsonInt(map['total'] ?? items.length);
+    final limit = jsonInt(map['limit'] ?? (items.isEmpty ? 25 : items.length));
+    final pages = jsonInt(map['pages'] ?? 1);
+    final page = jsonInt(map['page'] ?? 1);
+    return PageResult(items: items, total: total, page: page, limit: limit > 0 ? limit : 25, pages: pages > 0 ? pages : 1);
+  }
+
+  Future<PageResult<Product>> products({
+    bool? active,
+    bool all = false,
+    int page = 1,
+    int limit = 25,
+    String? q,
+  }) async {
     final data = await _send(
       'GET',
       '/products',
-      query: {if (active == true) 'active': 'true'},
+      query: {
+        if (active == true) 'active': 'true',
+        if (all) 'all': '1',
+        if (!all) 'page': '$page',
+        if (!all) 'limit': '$limit',
+        if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      },
     );
-    return (data as List).whereType<Map>().map((item) => Product.fromJson(Map<String, dynamic>.from(item))).toList();
+    return _pageResult(data, Product.fromJson);
   }
 
-  Future<void> saveProduct(Map<String, String> fields, {String? id, File? image}) async {
+  Future<void> saveProduct(Map<String, String> fields, {String? id}) async {
     if (id == null) {
-      await _multipart('POST', '/products', fields: fields, file: image);
+      await _send('POST', '/products', body: fields);
     } else {
-      await _multipart('PUT', '/products/$id', fields: fields, file: image);
+      await _send('PUT', '/products/$id', body: fields);
     }
   }
 
@@ -222,9 +252,9 @@ class ApiClient {
     await _send('DELETE', '/categories/$id');
   }
 
-  Future<List<Sale>> sales({int limit = 100}) async {
-    final data = await _send('GET', '/sales', query: {'limit': '$limit'});
-    return (data as List).whereType<Map>().map((item) => Sale.fromJson(Map<String, dynamic>.from(item))).toList();
+  Future<PageResult<Sale>> sales({int page = 1, int limit = 25}) async {
+    final data = await _send('GET', '/sales', query: {'page': '$page', 'limit': '$limit'});
+    return _pageResult(data, Sale.fromJson);
   }
 
   Future<Sale> createSale(Map<String, dynamic> body) async {

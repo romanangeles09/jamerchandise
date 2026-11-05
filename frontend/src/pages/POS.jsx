@@ -4,13 +4,21 @@ import BarcodeScanner from "../components/BarcodeScanner";
 import { useAuth } from "../context/AuthContext";
 import api, { getErrorMessage } from "../lib/api";
 import { loadCartState, saveCartState } from "../lib/cartStorage";
-import { productImageSrc } from "../lib/image";
 import { peso } from "../lib/money";
 import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
 
 function onlyDigits(value, maxLength) {
   return String(value || "").replace(/\D/g, "").slice(0, maxLength);
+}
+
+function productItems(data) {
+  return Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+}
+
+async function loadActiveProducts() {
+  const res = await api.get("/products", { params: { active: true, all: 1 } });
+  return productItems(res.data);
 }
 
 export default function POS() {
@@ -39,12 +47,9 @@ export default function POS() {
   const [voidBusy, setVoidBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      api.get("/products", { params: { active: true } }),
-      api.get("/categories"),
-    ])
-      .then(([productRes, categoryRes]) => {
-        setProducts(productRes.data);
+    Promise.all([loadActiveProducts(), api.get("/categories")])
+      .then(([catalog, categoryRes]) => {
+        setProducts(catalog);
         setCategories(categoryRes.data);
       })
       .catch((err) => setError(getErrorMessage(err, "Unable to load POS catalog.")));
@@ -196,7 +201,7 @@ export default function POS() {
     let product = findByCode(code);
     if (!product) {
       try {
-        const [{ data: latest }] = await Promise.all([api.get("/products", { params: { active: true } })]);
+        const latest = await loadActiveProducts();
         setProducts(latest);
         product = findByCode(code, latest);
       } catch (_err) {
@@ -305,8 +310,7 @@ export default function POS() {
       setAmountPaid("");
       setGcashTxnNo("");
       setConfirming(false);
-      const productRes = await api.get("/products", { params: { active: true } });
-      setProducts(productRes.data);
+      setProducts(await loadActiveProducts());
     } catch (err) {
       setError(getErrorMessage(err, "Checkout failed."));
       setConfirming(false);
@@ -362,8 +366,8 @@ export default function POS() {
                 setScanning(true);
                 setScanNotice("");
                 setError("");
-                api.get("/products", { params: { active: true } })
-                  .then((res) => setProducts(res.data))
+                loadActiveProducts()
+                  .then((catalog) => setProducts(catalog))
                   .catch(() => {});
               }}
             >
@@ -397,11 +401,7 @@ export default function POS() {
               onClick={() => addProduct(product)}
               disabled={product.stock < 1 || (saleType === "wholesale" && !hasWholesale(product))}
             >
-              {product.hasImage ? (
-                <img src={productImageSrc(product)} alt="" className="tile-photo" />
-              ) : (
-                <span className="tile-photo placeholder">{product.name.slice(0, 1)}</span>
-              )}
+              <span className="tile-photo placeholder">{product.name.slice(0, 1)}</span>
               <small>{product.category?.name}</small>
               <strong>{product.name}</strong>
               <span>{peso(priceOf(product))}</span>

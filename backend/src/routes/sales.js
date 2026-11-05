@@ -14,12 +14,20 @@ async function nextInvoiceNo() {
 
 router.get("/", async (req, res) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 25, 100);
-    const sales = await Sale.find(ownSalesFilter(req.user))
+    const filter = ownSalesFilter(req.user);
+    const total = await Sale.countDocuments(filter);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+    const pages = Math.max(1, Math.ceil(total / limit) || 1);
+    const page = Math.min(Math.max(Number(req.query.page) || 1, 1), pages);
+    const skip = (page - 1) * limit;
+
+    const items = await Sale.find(filter)
       .populate("cashier", "name")
       .sort({ createdAt: -1 })
+      .skip(skip)
       .limit(limit);
-    res.json(sales);
+
+    res.json({ items, total, page, limit, pages });
   } catch (error) {
     res.status(500).json({ message: "Unable to load sales." });
   }

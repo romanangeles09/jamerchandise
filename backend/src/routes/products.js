@@ -1,8 +1,6 @@
 const express = require("express");
 const Product = require("../models/Product");
 const { protect } = require("../middleware/auth");
-const { handleImageUpload } = require("../lib/upload");
-const { uploadProductImage, destroyImage } = require("../lib/cloudinary");
 const { applyProductDefaults, saveProductWithSkuRetry } = require("../lib/productDefaults");
 
 const router = express.Router();
@@ -44,50 +42,16 @@ function validateProduct(data) {
   return null;
 }
 
-async function applyImage(product, req) {
-  if (req.file) {
-    if (product.imagePublicId) await destroyImage(product.imagePublicId);
-    const result = await uploadProductImage(req.file);
-    product.imageUrl = result.secure_url;
-    product.imagePublicId = result.public_id;
-    product.hasImage = true;
-    product.image = undefined;
-    return;
-  }
-  if (String(req.body.removeImage) === "true") {
-    if (product.imagePublicId) await destroyImage(product.imagePublicId);
-    product.imageUrl = "";
-    product.imagePublicId = "";
-    product.hasImage = false;
-    product.image = undefined;
-  }
-}
-
 function toProductJson(product) {
   const json = product.toJSON();
   delete json.image;
   delete json.imagePublicId;
-  json.hasImage = Boolean(product.imageUrl || product.hasImage);
-  json.imageUrl = product.imageUrl || "";
+  delete json.imageUrl;
+  delete json.hasImage;
   return json;
 }
 
-router.get("/:id/image", async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id).select("image imageUrl hasImage");
-    if (product?.imageUrl) {
-      return res.redirect(product.imageUrl);
-    }
-    if (!product?.hasImage || !product.image?.data) {
-      return res.status(404).json({ message: "No image for this product." });
-    }
-    res.set("Content-Type", product.image.contentType || "image/jpeg");
-    res.set("Cache-Control", "public, max-age=86400");
-    res.send(product.image.data);
-  } catch (error) {
-    res.status(404).json({ message: "No image for this product." });
-  }
-});
+const PRODUCT_SELECT = "-image -imageUrl -imagePublicId -hasImage";
 
 router.use(protect);
 
@@ -107,17 +71,35 @@ router.get("/", async (req, res) => {
       ];
     }
 
-    const products = await Product.find(filter)
-      .select("-image")
+    const total = await Product.countDocuments(filter);
+    const wantAll = req.query.all === "1" || req.query.all === "true";
+    const limit = wantAll
+      ? Math.max(total, 1)
+      : Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+    const pages = Math.max(1, Math.ceil(total / limit) || 1);
+    const page = wantAll ? 1 : Math.min(Math.max(Number(req.query.page) || 1, 1), pages);
+    const skip = wantAll ? 0 : (page - 1) * limit;
+
+    const items = await Product.find(filter)
+      .select(PRODUCT_SELECT)
       .populate("category", "name")
-      .sort({ name: 1 });
-    res.json(products);
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      items: items.map(toProductJson),
+      total,
+      page,
+      limit,
+      pages,
+    });
   } catch (error) {
     res.status(500).json({ message: "Unable to load products." });
   }
 });
 
-router.post("/", handleImageUpload, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const data = productPayload(req.body);
     data.sku = "";
@@ -126,7 +108,6 @@ router.post("/", handleImageUpload, async (req, res) => {
     if (error) return res.status(400).json({ message: error });
 
     const product = new Product(data);
-    await applyImage(product, req);
     await saveProductWithSkuRetry(product, { regenerateSku: true, regenerateBarcode: true });
     await product.populate("category", "name");
     res.status(201).json(toProductJson(product));
@@ -141,7 +122,7 @@ router.post("/", handleImageUpload, async (req, res) => {
   }
 });
 
-router.put("/:id", handleImageUpload, async (req, res) => {
+router.put("/:id", async (req, res) => {
   try {
     const data = productPayload(req.body);
     const product = await Product.findById(req.params.id);
@@ -154,7 +135,6 @@ router.put("/:id", handleImageUpload, async (req, res) => {
     if (error) return res.status(400).json({ message: error });
 
     Object.assign(product, data);
-    await applyImage(product, req);
     await saveProductWithSkuRetry(product, { regenerateSku: false });
     await product.populate("category", "name");
     res.json(toProductJson(product));
@@ -173,7 +153,6 @@ router.delete("/:id", async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found." });
-    if (product.imagePublicId) await destroyImage(product.imagePublicId);
     res.json({ message: "Product deleted." });
   } catch (error) {
     res.status(500).json({ message: "Unable to delete product." });

@@ -5,7 +5,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("ja_token");
+  const token = sessionStorage.getItem("ja_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -21,6 +21,7 @@ api.interceptors.response.use(
       url.includes("/auth/pin-login") ||
       url.includes("/auth/verify-superadmin-pin");
     if (error.response?.status === 401 && !isLoginAttempt) {
+      sessionStorage.removeItem("ja_token");
       localStorage.removeItem("ja_token");
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
