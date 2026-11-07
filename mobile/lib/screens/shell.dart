@@ -23,7 +23,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late String page;
   bool collapsed = false;
-  final posScreen = const PosScreen();
+  final _posKey = GlobalKey();
 
   @override
   void initState() {
@@ -51,7 +51,7 @@ class _AppShellState extends State<AppShell> {
     return switch (id) {
       'dashboard' => const DashboardScreen(),
       'transactions' => const TransactionsScreen(),
-      'pos' => posScreen,
+      'pos' => PosScreen(key: _posKey),
       'cutoff' => const CutoffScreen(),
       'inventory' => const InventoryScreen(),
       'users' => const UsersScreen(),
@@ -65,19 +65,8 @@ class _AppShellState extends State<AppShell> {
       color: JaColors.paper,
       child: Padding(
         padding: EdgeInsets.fromLTRB(compact ? 10 : 16, compact ? 8 : 12, compact ? 10 : 18, compact ? 8 : 12),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            TickerMode(
-              enabled: page == 'pos',
-              child: Offstage(
-                offstage: page != 'pos',
-                child: posScreen,
-              ),
-            ),
-            if (page != 'pos') screenFor(page),
-          ],
-        ),
+        // Tight full-area constraints so pages with Expanded (POS/Dashboard) layout correctly on web.
+        child: SizedBox.expand(child: screenFor(page)),
       ),
     );
   }
@@ -281,21 +270,20 @@ class _AppShellState extends State<AppShell> {
           Positioned(
             top: 34,
             left: (collapsed ? 88 : 260) - 16,
+            width: 32,
+            height: 32,
             child: Material(
               color: Colors.white,
               shape: const CircleBorder(side: BorderSide(color: Color(0xFFC4B7A4))),
               elevation: 4,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => setState(() => collapsed = !collapsed),
-                child: SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: Icon(
-                    collapsed ? Icons.chevron_right : Icons.chevron_left,
-                    size: 18,
-                    color: JaColors.ink,
-                  ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                tooltip: collapsed ? 'Expand menu' : 'Collapse menu',
+                onPressed: () => setState(() => collapsed = !collapsed),
+                icon: Icon(
+                  collapsed ? Icons.chevron_right : Icons.chevron_left,
+                  size: 18,
+                  color: JaColors.ink,
                 ),
               ),
             ),

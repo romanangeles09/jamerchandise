@@ -9,6 +9,8 @@ import '../code128.dart';
 import '../layout.dart';
 import '../models.dart';
 import '../money.dart';
+import '../product_import.dart';
+import '../product_import_picker.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -59,6 +61,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<Category> categories = [];
   String query = '';
   String error = '';
+  String importMessage = '';
+  bool importing = false;
   int page = 1;
   int pages = 1;
   int total = 0;
@@ -105,6 +109,58 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  Future<void> importExcel() async {
+    setState(() {
+      error = '';
+      importMessage = '';
+    });
+    try {
+      final bytes = await pickProductImportBytes();
+      if (bytes == null || bytes.isEmpty) return;
+
+      if (!mounted) return;
+      setState(() => importing = true);
+
+      final parsed = parseProductImportBytes(bytes);
+      if (parsed.items.isEmpty) {
+        throw Exception(parsed.skipped.isNotEmpty ? parsed.skipped.first : 'No valid product rows found.');
+      }
+
+      if (!mounted) return;
+      final result = await context.read<ApiClient>().importProducts(
+        parsed.items
+            .map(
+              (item) => {
+                'name': item.name,
+                'retailPrice': item.price,
+                'stock': item.quantity,
+              },
+            )
+            .toList(),
+      );
+
+      final parts = <String>[
+        '${result['message'] ?? 'Imported ${result['created']} products.'}',
+      ];
+      if (parsed.skipped.isNotEmpty) {
+        parts.add('${parsed.skipped.length} row(s) skipped in the file.');
+      }
+      final apiErrors = result['errors'];
+      if (apiErrors is List && apiErrors.isNotEmpty) {
+        parts.add(apiErrors.take(5).join(' '));
+      }
+
+      if (!mounted) return;
+      setState(() => importMessage = parts.join(' '));
+      await load(nextPage: 1);
+    } catch (err) {
+      if (!mounted) return;
+      setState(() => error = err is ApiException ? err.message : '$err');
+    } finally {
+      if (mounted) setState(() => importing = false);
+    }
+  }
+
   Future<void> openCategory([Category? category]) async {
     await showJaDialog(
       context: context,
@@ -120,31 +176,56 @@ class _InventoryScreenState extends State<InventoryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (compact)
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: SegmentedChoice(
-                  value: tab,
-                  options: const [('products', 'Products'), ('categories', 'Categories')],
-                  onChanged: (value) => setState(() => tab = value),
+              Row(
+                children: [
+                  Expanded(
+                    child: SegmentedChoice(
+                      expanded: true,
+                      value: tab,
+                      options: const [('products', 'Products'), ('categories', 'Categories')],
+                      onChanged: (value) => setState(() => tab = value),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  JaButton(
+                    label: tab == 'products' ? 'Add' : 'Add',
+                    primary: true,
+                    onPressed: () => tab == 'products' ? openProduct() : openCategory(),
+                  ),
+                ],
+              ),
+              if (tab == 'products') ...[
+                const SizedBox(height: 8),
+                JaButton(
+                  label: importing ? 'Importing...' : 'Import Excel',
+                  onPressed: importing ? null : importExcel,
                 ),
-              ),
-              const SizedBox(width: 8),
-              JaButton(
-                label: tab == 'products' ? 'Add product' : 'Add category',
-                primary: true,
-                onPressed: () => tab == 'products' ? openProduct() : openCategory(),
-              ),
+              ],
             ],
           )
         else ...[
           PageHeader(
             eyebrow: 'Stock room',
             title: 'Inventory',
-            trailing: JaButton(
-              label: tab == 'products' ? 'Add product' : 'Add category',
-              primary: true,
-              onPressed: () => tab == 'products' ? openProduct() : openCategory(),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (tab == 'products') ...[
+                  JaButton(
+                    label: importing ? 'Importing...' : 'Import Excel',
+                    onPressed: importing ? null : importExcel,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                JaButton(
+                  label: tab == 'products' ? 'Add product' : 'Add category',
+                  primary: true,
+                  onPressed: () => tab == 'products' ? openProduct() : openCategory(),
+                ),
+              ],
             ),
           ),
           SegmentedChoice(
@@ -155,6 +236,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ],
         SizedBox(height: compact ? 6 : 16),
         if (error.isNotEmpty) ...[JaAlert(error), SizedBox(height: compact ? 6 : 12)],
+        if (importMessage.isNotEmpty) ...[JaAlert(importMessage, success: true), SizedBox(height: compact ? 6 : 12)],
         if (tab == 'products') ...[
           TextField(
             decoration: InputDecoration(hintText: 'Search products', isDense: compact),

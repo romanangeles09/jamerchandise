@@ -1,9 +1,51 @@
 const express = require("express");
+const Category = require("../models/Category");
 const Product = require("../models/Product");
 const { protect } = require("../middleware/auth");
 const { applyProductDefaults, saveProductWithSkuRetry } = require("../lib/productDefaults");
 
 const router = express.Router();
+
+async function ensureUncategorizedCategory() {
+  let category = await Category.findOne({ name: "Uncategorized" });
+  if (!category) {
+    category = await Category.create({
+      name: "Uncategorized",
+      description: "Imported and uncategorized items",
+    });
+  }
+  return category;
+}
+
+function parseImportRow(raw, index) {
+  const name = String(raw?.name ?? raw?.productName ?? "").trim();
+  const retailPrice = Number(String(raw?.retailPrice ?? raw?.price ?? "").replace(/,/g, "").trim());
+  const stock = Number(String(raw?.stock ?? raw?.quantity ?? raw?.qty ?? "").replace(/,/g, "").trim());
+  const row = index + 1;
+
+  if (!name) return { error: `Row ${row}: product name is required.` };
+  if (!Number.isFinite(retailPrice) || retailPrice < 0) return { error: `Row ${row}: price is invalid.` };
+  if (!Number.isFinite(stock) || stock < 0 || !Number.isInteger(stock)) {
+    return { error: `Row ${row}: quantity must be a whole number.` };
+  }
+
+  return {
+    item: {
+      name,
+      alias: "",
+      sku: "",
+      barcode: "",
+      unit: "pc",
+      retailPrice,
+      wholesalePrice: null,
+      wholesaleMinQty: null,
+      costPrice: null,
+      stock,
+      reorderLevel: 10,
+      isActive: true,
+    },
+  };
+}
 
 function optionalNumber(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
@@ -96,6 +138,57 @@ router.get("/", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Unable to load products." });
+  }
+});
+
+router.post("/import", async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!rows.length) {
+      return res.status(400).json({ message: "No products to import." });
+    }
+    if (rows.length > 500) {
+      return res.status(400).json({ message: "Import up to 500 products at a time." });
+    }
+
+    const category = await ensureUncategorizedCategory();
+    const created = [];
+    const errors = [];
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const parsed = parseImportRow(rows[index], index);
+      if (parsed.error) {
+        errors.push(parsed.error);
+        continue;
+      }
+
+      try {
+        const data = { ...parsed.item, category: category._id };
+        await applyProductDefaults(data);
+        const error = validateProduct(data);
+        if (error) {
+          errors.push(`Row ${index + 1}: ${error}`);
+          continue;
+        }
+        const product = new Product(data);
+        await saveProductWithSkuRetry(product, { regenerateSku: true, regenerateBarcode: true });
+        created.push(product.name);
+      } catch (error) {
+        errors.push(`Row ${index + 1}: ${error.message || "Unable to import product."}`);
+      }
+    }
+
+    res.status(created.length ? 201 : 400).json({
+      created: created.length,
+      failed: errors.length,
+      errors: errors.slice(0, 20),
+      message:
+        created.length > 0
+          ? `Imported ${created.length} product${created.length === 1 ? "" : "s"}${errors.length ? `, ${errors.length} skipped` : ""}.`
+          : "No products were imported.",
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || "Unable to import products." });
   }
 });
 

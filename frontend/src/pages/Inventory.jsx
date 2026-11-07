@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, { getErrorMessage } from "../lib/api";
 import Code128 from "../components/Code128";
 import Pagination from "../components/Pagination";
 import { printBarcodeLabel } from "../lib/barcodeLabel";
 import { nextCode128Barcode } from "../lib/code128";
+import { parseProductImportFile } from "../lib/productImport";
 import { peso } from "../lib/money";
 import Modal from "../components/Modal";
 
@@ -69,6 +70,9 @@ export default function Inventory() {
   const [barcodeCopies, setBarcodeCopies] = useState(1);
   const [categoryForm, setCategoryForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
+  const importInputRef = useRef(null);
 
   async function loadCategories() {
     const categoryRes = await api.get("/categories");
@@ -168,6 +172,41 @@ export default function Inventory() {
     }
   }
 
+  async function importExcel(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setImporting(true);
+    setError("");
+    setImportMessage("");
+    try {
+      const buffer = await file.arrayBuffer();
+      const { items, skipped } = parseProductImportFile(buffer);
+      if (!items.length) {
+        throw new Error(skipped[0] || "No valid product rows found.");
+      }
+
+      const res = await api.post("/products/import", {
+        items: items.map((item) => ({
+          name: item.name,
+          retailPrice: item.price,
+          stock: item.quantity,
+        })),
+      });
+
+      const parts = [res.data.message || `Imported ${res.data.created} products.`];
+      if (skipped.length) parts.push(`${skipped.length} row(s) skipped in the file.`);
+      if (res.data.errors?.length) parts.push(res.data.errors.slice(0, 5).join(" "));
+      setImportMessage(parts.join(" "));
+      await load(1, query);
+    } catch (err) {
+      setError(getErrorMessage(err, err.message || "Unable to import Excel file."));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function removeProduct(id) {
     if (!window.confirm("Delete this product?")) return;
     await api.delete(`/products/${id}`);
@@ -193,24 +232,43 @@ export default function Inventory() {
         </div>
         <div className="page-actions">
           {tab === "products" ? (
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => {
-                const category = categories[0]?._id || "";
-                setError("");
-                setBarcodeCopies(1);
-                const sku = nextSku(category, products, categories);
-                setProductForm({
-                  ...emptyProduct,
-                  category,
-                  sku,
-                  barcode: nextCode128Barcode(products),
-                });
-              }}
-            >
-              Add product
-            </button>
+            <>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                hidden
+                onChange={importExcel}
+              />
+              <button
+                type="button"
+                className="btn"
+                disabled={importing}
+                onClick={() => importInputRef.current?.click()}
+              >
+                {importing ? "Importing..." : "Import Excel"}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  const uncategorized = categories.find((item) => item.name === "Uncategorized");
+                  const category = uncategorized?._id || categories[0]?._id || "";
+                  setError("");
+                  setImportMessage("");
+                  setBarcodeCopies(1);
+                  const sku = nextSku(category, products, categories);
+                  setProductForm({
+                    ...emptyProduct,
+                    category,
+                    sku,
+                    barcode: nextCode128Barcode(products),
+                  });
+                }}
+              >
+                Add product
+              </button>
+            </>
           ) : (
             <button type="button" className="btn primary" onClick={() => setCategoryForm({ ...emptyCategory })}>
               Add category
@@ -229,6 +287,7 @@ export default function Inventory() {
       </div>
 
       {error ? <div className="alert">{error}</div> : null}
+      {importMessage ? <div className="success">{importMessage}</div> : null}
 
       {tab === "products" ? (
         <>

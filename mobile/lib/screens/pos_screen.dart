@@ -35,11 +35,15 @@ class _PosScreenState extends State<PosScreen> {
   String mobilePane = 'products';
   bool busy = false;
   bool cartReady = false;
+  int catalogPage = 1;
+  static const int catalogPageSize = 24;
 
   @override
   void initState() {
     super.initState();
-    search.addListener(() => setState(() {}));
+    search.addListener(() {
+      setState(() => catalogPage = 1);
+    });
     discountInput.addListener(() {
       setState(() {});
       rememberCart();
@@ -94,6 +98,28 @@ class _PosScreenState extends State<PosScreen> {
           product.barcode.toLowerCase().contains(term);
       return matchesCategory && matchesQuery;
     }).toList();
+  }
+
+  int get catalogPages {
+    final total = visible.length;
+    if (total == 0) return 1;
+    return ((total + catalogPageSize - 1) / catalogPageSize).floor();
+  }
+
+  List<Product> get pagedVisible {
+    final pages = catalogPages;
+    final page = catalogPage.clamp(1, pages);
+    final start = (page - 1) * catalogPageSize;
+    final list = visible;
+    if (start >= list.length) return const [];
+    return list.sublist(start, (start + catalogPageSize).clamp(0, list.length));
+  }
+
+  void setCatalogFilter(VoidCallback update) {
+    setState(() {
+      update();
+      catalogPage = 1;
+    });
   }
 
   List<CartItem> syncCartWithProducts(List<CartItem> items) {
@@ -404,17 +430,21 @@ class _PosScreenState extends State<PosScreen> {
         ),
         SizedBox(height: compact ? 6 : 8),
         SizedBox(
-          height: compact ? 32 : null,
+          height: compact ? 32 : 40,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                ChipChoice(label: 'All', selected: category.isEmpty, onTap: () => setState(() => category = '')),
+                ChipChoice(
+                  label: 'All',
+                  selected: category.isEmpty,
+                  onTap: () => setCatalogFilter(() => category = ''),
+                ),
                 ...categories.map(
                   (item) => ChipChoice(
                     label: item.name,
                     selected: category == item.id,
-                    onTap: () => setState(() => category = item.id),
+                    onTap: () => setCatalogFilter(() => category = item.id),
                   ),
                 ),
               ],
@@ -422,83 +452,102 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
         SizedBox(height: compact ? 6 : 8),
-        Expanded(
-          child: GridView.builder(
-            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: compact ? 110 : 148,
-              mainAxisSpacing: compact ? 6 : 8,
-              crossAxisSpacing: compact ? 6 : 8,
-              childAspectRatio: compact ? 0.88 : 0.72,
-            ),
-            itemCount: visible.length,
-            itemBuilder: (context, index) {
-              final product = visible[index];
-              final disabled = product.stock < 1 || (saleType == 'wholesale' && !product.hasWholesale);
-              return Opacity(
-                opacity: disabled ? 0.45 : 1,
-                child: InkWell(
-                  onTap: disabled ? null : () => addProduct(product),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Ink(
-                    padding: EdgeInsets.all(compact ? 8 : 10),
-                    decoration: BoxDecoration(
-                      color: JaColors.card,
-                      border: Border.all(color: JaColors.line),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final side = constraints.biggest.shortestSide;
-                              return ProductPhoto(
-                                name: product.name,
-                                hasImage: product.hasImage,
-                                imageUrl: product.imageUrl,
-                                size: side,
-                                radius: 10,
-                              );
-                            },
-                          ),
-                        ),
-                        SizedBox(height: compact ? 4 : 6),
-                        if (!compact)
-                          Text(
-                            product.category?.name ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: JaColors.muted, fontSize: 11),
-                          ),
-                        Text(
-                          product.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13),
-                        ),
-                        Text(
-                          peso(priceOf(product)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: JaColors.copperDark, fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13),
-                        ),
-                        if (!compact)
-                          Text(
-                            '${product.stock} ${product.unit}${saleType == 'wholesale' && product.hasWholesale ? ' · min ${product.wholesaleMin}' : ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: JaColors.muted, fontSize: 11),
-                          ),
-                      ],
-                    ),
-                  ),
+        Expanded(child: _productGrid(compact: compact)),
+        if (visible.isNotEmpty && catalogPages > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton(
+                onPressed: catalogPage <= 1 ? null : () => setState(() => catalogPage -= 1),
+                child: const Text('Previous'),
+              ),
+              Expanded(
+                child: Text(
+                  'Page ${catalogPage.clamp(1, catalogPages)} of $catalogPages · ${visible.length} products',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: JaColors.muted, fontSize: 12),
                 ),
-              );
-            },
+              ),
+              TextButton(
+                onPressed: catalogPage >= catalogPages ? null : () => setState(() => catalogPage += 1),
+                child: const Text('Next'),
+              ),
+            ],
           ),
-        ),
+        ],
       ],
+    );
+  }
+
+  Widget _productGrid({required bool compact}) {
+    final pageItems = pagedVisible;
+    if (visible.isEmpty) {
+      return const Center(
+        child: Text('No products yet.', style: TextStyle(color: JaColors.muted)),
+      );
+    }
+    return GridView.builder(
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: compact ? 160 : 180,
+        mainAxisSpacing: compact ? 6 : 8,
+        crossAxisSpacing: compact ? 6 : 8,
+        childAspectRatio: compact ? 1.55 : 1.45,
+      ),
+      itemCount: pageItems.length,
+      itemBuilder: (context, index) {
+        final product = pageItems[index];
+        final disabled = product.stock < 1 || (saleType == 'wholesale' && !product.hasWholesale);
+        return Opacity(
+          opacity: disabled ? 0.45 : 1,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: disabled ? null : () => addProduct(product),
+              borderRadius: BorderRadius.circular(14),
+              child: Ink(
+                padding: EdgeInsets.all(compact ? 8 : 10),
+                decoration: BoxDecoration(
+                  color: JaColors.card,
+                  border: Border.all(color: JaColors.line),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (!compact)
+                      Text(
+                        product.category?.name ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: JaColors.muted, fontSize: 11),
+                      ),
+                    Text(
+                      product.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      peso(priceOf(product)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: JaColors.copperDark, fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13),
+                    ),
+                    Text(
+                      '${product.stock} ${product.unit}${saleType == 'wholesale' && product.hasWholesale ? ' · min ${product.wholesaleMin}' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: JaColors.muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -621,52 +670,62 @@ class _PosScreenState extends State<PosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final compact = isCompact(context);
-    if (compact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = isCompact(context) || constraints.maxWidth < 900;
+        if (!constraints.hasBoundedHeight || !constraints.hasBoundedWidth) {
+          return const SizedBox.shrink();
+        }
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                flex: 3,
-                child: SegmentedChoice(
-                  value: mobilePane,
-                  options: [
-                    ('products', 'Products'),
-                    ('cart', 'Cart${cart.isEmpty ? '' : ' (${cart.length})'}'),
-                  ],
-                  onChanged: (value) => setState(() => mobilePane = value),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: SegmentedChoice(
+                      expanded: true,
+                      value: mobilePane,
+                      options: [
+                        ('products', 'Products'),
+                        ('cart', 'Cart${cart.isEmpty ? '' : ' (${cart.length})'}'),
+                      ],
+                      onChanged: (value) => setState(() => mobilePane = value),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: SegmentedChoice(
+                      expanded: true,
+                      value: saleType,
+                      options: const [('retail', 'Retail'), ('wholesale', 'Wholesale')],
+                      onChanged: (value) {
+                        setState(() => saleType = value);
+                        rememberCart();
+                      },
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
+              const SizedBox(height: 6),
               Expanded(
-                flex: 2,
-                child: SegmentedChoice(
-                  value: saleType,
-                  options: const [('retail', 'Retail'), ('wholesale', 'Wholesale')],
-                  onChanged: (value) {
-                    setState(() => saleType = value);
-                    rememberCart();
-                  },
-                ),
+                child: mobilePane == 'cart' ? _cartPane(compact: true) : _catalogPane(compact: true),
               ),
             ],
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: mobilePane == 'cart' ? _cartPane(compact: true) : _catalogPane(compact: true),
-          ),
-        ],
-      );
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(flex: 14, child: _catalogPane(compact: false)),
-        const SizedBox(width: 12),
-        SizedBox(width: 300, child: _cartPane(compact: false)),
-      ],
+          );
+        }
+        final cartWidth = constraints.maxWidth >= 1100 ? 320.0 : 280.0;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: _catalogPane(compact: false)),
+            const SizedBox(width: 12),
+            SizedBox(width: cartWidth, child: _cartPane(compact: false)),
+          ],
+        );
+      },
     );
   }
 

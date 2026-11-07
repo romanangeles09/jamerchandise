@@ -140,28 +140,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               children: [
                                 Text('Low stock', style: Theme.of(context).textTheme.titleLarge),
                                 const SizedBox(height: 12),
-                                if ((data?.lowStock ?? const []).isEmpty)
-                                  const Text('Stock levels look healthy.', style: TextStyle(color: JaColors.muted))
-                                else
-                                  ...data!.lowStock.map(
-                                    (product) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                SizedBox(
+                                  height: 220,
+                                  child: (data?.lowStock ?? const []).isEmpty
+                                      ? const Text('Stock levels look healthy.', style: TextStyle(color: JaColors.muted))
+                                      : ListView.separated(
+                                          padding: EdgeInsets.zero,
+                                          itemCount: data!.lowStock.length,
+                                          separatorBuilder: (context, index) => const SizedBox(height: 10),
+                                          itemBuilder: (context, index) {
+                                            final product = data!.lowStock[index];
+                                            return Row(
                                               children: [
-                                                Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                                Text(product.category?.name ?? '', style: const TextStyle(color: JaColors.muted, fontSize: 12)),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                                      Text(
+                                                        product.category?.name ?? '',
+                                                        style: const TextStyle(color: JaColors.muted, fontSize: 12),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${product.stock} ${product.unit}',
+                                                  style: const TextStyle(color: JaColors.warn, fontWeight: FontWeight.w600),
+                                                ),
                                               ],
-                                            ),
-                                          ),
-                                          Text('${product.stock} ${product.unit}', style: const TextStyle(color: JaColors.warn, fontWeight: FontWeight.w600)),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
+                                            );
+                                          },
+                                        ),
+                                ),
                               ],
                             ),
                           ),

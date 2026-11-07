@@ -230,6 +230,11 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> importProducts(List<Map<String, dynamic>> items) async {
+    final data = await _send('POST', '/products/import', body: {'items': items});
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   Future<void> deleteProduct(String id) async {
     await _send('DELETE', '/products/$id');
   }

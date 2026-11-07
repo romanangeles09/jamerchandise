@@ -7,6 +7,9 @@ import { loadCartState, saveCartState } from "../lib/cartStorage";
 import { peso } from "../lib/money";
 import { printReceipt, ReceiptActions } from "../lib/receipt";
 import Modal from "../components/Modal";
+import Pagination from "../components/Pagination";
+
+const CATALOG_PAGE_SIZE = 24;
 
 function onlyDigits(value, maxLength) {
   return String(value || "").replace(/\D/g, "").slice(0, maxLength);
@@ -28,6 +31,7 @@ export default function POS() {
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const [catalogPage, setCatalogPage] = useState(1);
   const [saleType, setSaleType] = useState(savedCart.saleType);
   const [cart, setCart] = useState(savedCart.cart);
   const [discount, setDiscount] = useState(savedCart.discount);
@@ -101,6 +105,13 @@ export default function POS() {
       return matchesCategory && matchesQuery;
     });
   }, [products, query, category]);
+
+  const catalogPages = Math.max(1, Math.ceil(visibleProducts.length / CATALOG_PAGE_SIZE) || 1);
+  const safeCatalogPage = Math.min(catalogPage, catalogPages);
+  const pagedProducts = useMemo(() => {
+    const start = (safeCatalogPage - 1) * CATALOG_PAGE_SIZE;
+    return visibleProducts.slice(start, start + CATALOG_PAGE_SIZE);
+  }, [visibleProducts, safeCatalogPage]);
 
   const pricedCart = cart.map((item) => {
     const unitPrice = saleType === "wholesale" ? item.wholesalePrice : item.retailPrice;
@@ -349,7 +360,10 @@ export default function POS() {
           <div className="search-row">
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setCatalogPage(1);
+              }}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return;
                 if (findByCode(query)) {
@@ -376,7 +390,14 @@ export default function POS() {
             </button>
           </div>
           <div className="chips">
-            <button type="button" className={!category ? "chip active" : "chip"} onClick={() => setCategory("")}>
+            <button
+              type="button"
+              className={!category ? "chip active" : "chip"}
+              onClick={() => {
+                setCategory("");
+                setCatalogPage(1);
+              }}
+            >
               All
             </button>
             {categories.map((item) => (
@@ -384,7 +405,10 @@ export default function POS() {
                 key={item._id}
                 type="button"
                 className={category === item._id ? "chip active" : "chip"}
-                onClick={() => setCategory(item._id)}
+                onClick={() => {
+                  setCategory(item._id);
+                  setCatalogPage(1);
+                }}
               >
                 {item.name}
               </button>
@@ -393,15 +417,14 @@ export default function POS() {
         </div>
 
         <div className="product-grid">
-          {visibleProducts.map((product) => (
+          {pagedProducts.map((product) => (
             <button
               key={product._id}
               type="button"
-              className="product-tile"
+              className="product-tile text-only"
               onClick={() => addProduct(product)}
               disabled={product.stock < 1 || (saleType === "wholesale" && !hasWholesale(product))}
             >
-              <span className="tile-photo placeholder">{product.name.slice(0, 1)}</span>
               <small>{product.category?.name}</small>
               <strong>{product.name}</strong>
               <span>{peso(priceOf(product))}</span>
@@ -412,6 +435,12 @@ export default function POS() {
             </button>
           ))}
         </div>
+        <Pagination
+          page={safeCatalogPage}
+          pages={catalogPages}
+          total={visibleProducts.length}
+          onChange={setCatalogPage}
+        />
       </div>
 
       <aside className="cart">

@@ -101,6 +101,7 @@ class _CutoffScreenState extends State<CutoffScreen> {
           child: FieldLabel(
             label: 'Payment',
             child: SegmentedChoice(
+              expanded: true,
               value: payment,
               options: const [('all', 'All'), ('cash', 'Cash'), ('gcash', 'GCash')],
               onChanged: (value) {

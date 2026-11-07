@@ -214,11 +214,14 @@ class SegmentedChoice extends StatelessWidget {
     required this.options,
     required this.value,
     required this.onChanged,
+    this.expanded = false,
   });
 
   final List<(String, String)> options;
   final String value;
   final ValueChanged<String> onChanged;
+  /// When true, options share width equally (parent must provide a bounded width).
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -230,35 +233,35 @@ class SegmentedChoice extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
+        mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
         children: options.map((option) {
           final selected = option.$1 == value;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: () => onChanged(option.$1),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12, vertical: compact ? 6 : 8),
-                  decoration: BoxDecoration(
-                    color: selected ? JaColors.ink : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    option.$2,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected ? Colors.white : JaColors.ink,
-                      fontSize: compact ? 13 : 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+          final cell = Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => onChanged(option.$1),
+              child: Container(
+                alignment: Alignment.center,
+                padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12, vertical: compact ? 6 : 8),
+                decoration: BoxDecoration(
+                  color: selected ? JaColors.ink : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  option.$2,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : JaColors.ink,
+                    fontSize: compact ? 13 : 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ),
           );
+          return expanded ? Expanded(child: cell) : cell;
         }).toList(),
       ),
     );
@@ -320,10 +323,11 @@ class ProductPhoto extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double side = (size.isFinite && size > 0) ? size : 44;
     final letter = name.isEmpty ? 'J' : name.substring(0, 1).toUpperCase();
     final placeholder = Container(
-      width: size,
-      height: size,
+      width: side,
+      height: side,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: JaColors.cream,
@@ -334,7 +338,7 @@ class ProductPhoto extends StatelessWidget {
         style: TextStyle(
           color: JaColors.copperDark,
           fontWeight: FontWeight.w700,
-          fontSize: size * 0.38,
+          fontSize: side * 0.38,
         ),
       ),
     );
@@ -343,8 +347,8 @@ class ProductPhoto extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius),
       child: Image.network(
         imageUrl,
-        width: size,
-        height: size,
+        width: side,
+        height: side,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => placeholder,
       ),

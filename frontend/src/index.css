@@ -424,6 +424,13 @@ nav {
   margin-bottom: 22px;
 }
 
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .page-head.compact {
   margin-bottom: 16px;
 }
@@ -909,6 +916,11 @@ th {
   display: grid;
   gap: 4px;
   min-height: 0;
+}
+
+.product-tile.text-only {
+  align-content: center;
+  min-height: 96px;
 }
 
 .product-tile:disabled {

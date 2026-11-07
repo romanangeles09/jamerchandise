@@ -45,6 +45,9 @@ dependencies:
   printing: ^5.14.2
   print_bluetooth_thermal: ^1.2.5
   esc_pos_utils_plus: ^2.0.4
+  excel: ^4.0.6
+  file_selector: ^1.1.0
+  web: ^1.1.2
 
 dev_dependencies:
   flutter_test:
