@@ -92,6 +92,7 @@ export default function Inventory() {
     setPage(data.page || 1);
     setPages(data.pages || 1);
     setTotal(data.total || 0);
+    setError("");
   }
 
   async function load(nextPage = page, nextQuery = query) {

@@ -157,60 +157,60 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Profile', style: Theme.of(context).textTheme.titleLarge),
-                          const SizedBox(height: 12),
-                          if (profileMessage.isNotEmpty) ...[JaAlert(profileMessage, success: true), const SizedBox(height: 12)],
-                          Row(
-                            children: [
-                              if (avatarFile != null && !removeAvatar)
-                                ClipOval(child: Image.file(avatarFile!, width: 88, height: 88, fit: BoxFit.cover))
-                              else
-                                ProductPhoto(
-                                  name: name.text,
-                                  hasImage: previewUrl.isNotEmpty && !removeAvatar,
-                                  imageUrl: previewUrl,
-                                  size: 88,
-                                  radius: 44,
-                                ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    JaButton(
-                                      label: 'Choose photo',
-                                      onPressed: () async {
-                                        final picked = await ImagePicker().pickImage(
-                                          source: ImageSource.gallery,
-                                          imageQuality: 85,
-                                        );
-                                        if (picked == null) return;
-                                        setState(() {
-                                          avatarFile = File(picked.path);
-                                          previewUrl = picked.path;
-                                          removeAvatar = false;
-                                        });
-                                      },
-                                    ),
-                                    const SizedBox(height: 6),
-                                    const Text(
-                                      'JPG, PNG, WEBP, or GIF up to 2 MB.',
-                                      style: TextStyle(color: JaColors.muted, fontSize: 12),
-                                    ),
-                                    if (previewUrl.isNotEmpty && !removeAvatar)
-                                      TextButton(
-                                        onPressed: () => setState(() {
-                                          avatarFile = null;
-                                          previewUrl = '';
-                                          removeAvatar = true;
-                                        }),
-                                        child: const Text('Remove photo', style: TextStyle(color: JaColors.danger)),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                          // Text('Profile', style: Theme.of(context).textTheme.titleLarge),
+                          // const SizedBox(height: 12),
+                          // if (profileMessage.isNotEmpty) ...[JaAlert(profileMessage, success: true), const SizedBox(height: 12)],
+                          // Row(
+                          //   children: [
+                          //     if (avatarFile != null && !removeAvatar)
+                          //       ClipOval(child: Image.file(avatarFile!, width: 88, height: 88, fit: BoxFit.cover))
+                          //     else
+                          //       ProductPhoto(
+                          //         name: name.text,
+                          //         hasImage: previewUrl.isNotEmpty && !removeAvatar,
+                          //         imageUrl: previewUrl,
+                          //         size: 88,
+                          //         radius: 44,
+                          //       ),
+                          //     const SizedBox(width: 12),
+                          //     Expanded(
+                          //       child: Column(
+                          //         crossAxisAlignment: CrossAxisAlignment.start,
+                          //         children: [
+                          //           JaButton(
+                          //             label: 'Choose photo',
+                          //             onPressed: () async {
+                          //               final picked = await ImagePicker().pickImage(
+                          //                 source: ImageSource.gallery,
+                          //                 imageQuality: 85,
+                          //               );
+                          //               if (picked == null) return;
+                          //               setState(() {
+                          //                 avatarFile = File(picked.path);
+                          //                 previewUrl = picked.path;
+                          //                 removeAvatar = false;
+                          //               });
+                          //             },
+                          //           ),
+                          //           const SizedBox(height: 6),
+                          //           const Text(
+                          //             'JPG, PNG, WEBP, or GIF up to 2 MB.',
+                          //             style: TextStyle(color: JaColors.muted, fontSize: 12),
+                          //           ),
+                          //           if (previewUrl.isNotEmpty && !removeAvatar)
+                          //             TextButton(
+                          //               onPressed: () => setState(() {
+                          //                 avatarFile = null;
+                          //                 previewUrl = '';
+                          //                 removeAvatar = true;
+                          //               }),
+                          //               child: const Text('Remove photo', style: TextStyle(color: JaColors.danger)),
+                          //             ),
+                          //         ],
+                          //       ),
+                          //     ),
+                          //   ],
+                          // ),
                           const SizedBox(height: 16),
                           FieldLabel(label: 'Full name', child: TextField(controller: name)),
                           const SizedBox(height: 12),

@@ -95,6 +95,10 @@ function toProductJson(product) {
 
 const PRODUCT_SELECT = "-image -imageUrl -imagePublicId -hasImage";
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 router.use(protect);
 
 router.get("/", async (req, res) => {
@@ -104,7 +108,7 @@ router.get("/", async (req, res) => {
     if (category) filter.category = category;
     if (active === "true") filter.isActive = true;
     if (q) {
-      const term = String(q).trim();
+      const term = escapeRegex(String(q).trim());
       filter.$or = [
         { name: { $regex: term, $options: "i" } },
         { alias: { $regex: term, $options: "i" } },
