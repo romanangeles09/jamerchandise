@@ -10,6 +10,6 @@ class AppConfig {
         return 'http://localhost:5000/api';
       }
     }
-    return 'https://jamerchandise.onrender.com/api';
+    return 'https://178.128.211.176/api';
   }
 }
