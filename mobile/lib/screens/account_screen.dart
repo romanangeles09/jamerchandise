@@ -292,7 +292,7 @@ class _AccountScreenState extends State<AccountScreen> {
             ? 'Connected to $printerName. Receipts and barcodes print here with no printer picker.'
             : printerName.isNotEmpty
                 ? 'Will print to $printerName over Bluetooth. Pair it in system Bluetooth settings if it is off.'
-                : 'Pair the printer in Bluetooth settings, allow Nearby devices, then tap PT265_DAD5 below if needed.';
+                : 'Pair the printer in Bluetooth settings, allow Nearby devices, then tap XP-58H below if needed.';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,7 +327,7 @@ class _AccountScreenState extends State<AccountScreen> {
         if (pairedPrinters.isNotEmpty) ...[
           const SizedBox(height: 12),
           const Text(
-            'Tap PT265_DAD5 once. After that, Print sends to it with no picker.',
+            'Tap XP-58H (or PT265) once. After that, Print sends to it with no picker.',
             style: TextStyle(color: JaColors.muted, fontSize: 12),
           ),
           const SizedBox(height: 8),

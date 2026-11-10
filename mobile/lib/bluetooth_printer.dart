@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -36,6 +40,8 @@ class BluetoothPrinter {
         defaultTargetPlatform == TargetPlatform.macOS;
   }
 
+  bool get _isAndroid => !kIsWeb && Platform.isAndroid;
+
   Future<void> loadSaved() async {
     final prefs = await SharedPreferences.getInstance();
     mac = prefs.getString(_macKey) ?? '';
@@ -70,22 +76,37 @@ class BluetoothPrinter {
   }
 
   Future<void> usePrinter(PairedPrinter printer) async {
-    await _connectTo(printer.mac, printer.name);
+    await _connectTo(printer.mac, printer.name, force: true);
   }
 
   Future<void> printBytes(List<int> bytes) async {
     if (!isSupported) {
       throw PrinterException('Bluetooth printing is only available in the tablet app.');
     }
-    await ensureConnected();
-    var ok = await PrintBluetoothThermal.writeBytes(bytes);
+
+    // Android RFCOMM sockets drop often; reconnect right before every job.
+    await ensureConnected(forceReconnect: _isAndroid);
+
+    var ok = await _write(bytes);
     if (!ok) {
-      await PrintBluetoothThermal.disconnect;
-      await ensureConnected();
-      ok = await PrintBluetoothThermal.writeBytes(bytes);
+      await ensureConnected(forceReconnect: true);
+      ok = await _write(bytes);
     }
     if (!ok) {
       throw PrinterException('Printer did not accept the job. Check paper and power, then try again.');
+    }
+  }
+
+  Future<bool> _write(List<int> bytes) async {
+    try {
+      return await PrintBluetoothThermal.writeBytes(bytes);
+    } on PlatformException catch (error) {
+      if (_isPermissionError(error)) {
+        throw PrinterException(
+          'Allow Nearby devices / Bluetooth for JA Merchandise, then try again.',
+        );
+      }
+      return false;
     }
   }
 
@@ -107,14 +128,18 @@ class BluetoothPrinter {
     await printBytes(bytes);
   }
 
-  Future<void> ensureConnected() async {
+  Future<void> ensureConnected({bool forceReconnect = false}) async {
     if (!isSupported) {
       throw PrinterException('Bluetooth printing is only available in the tablet app.');
     }
     await loadSaved();
-    if (await isConnected && mac.isNotEmpty) return;
-
     await _ensureReady();
+
+    if (!forceReconnect && mac.isNotEmpty) {
+      // Avoid Android connectionStatus probe (it writes a space and can break the socket).
+      if (!_isAndroid && await isConnected) return;
+    }
+
     final devices = await PrintBluetoothThermal.pairedBluetooths;
     if (devices.isEmpty) {
       throw PrinterException(
@@ -136,28 +161,61 @@ class BluetoothPrinter {
       final names = devices.map((item) => item.name.trim()).where((item) => item.isNotEmpty).join(', ');
       throw PrinterException(
         names.isEmpty
-            ? 'No GOOJPRT printer found among paired Bluetooth devices. Open Account Setting and tap PT265_DAD5.'
-            : 'Open Account Setting and tap your printer. Paired: $names',
+            ? 'No receipt printer found among paired Bluetooth devices. Open Account Setting and tap XP-58H or PT265.'
+            : 'Open Account Setting and tap your printer (XP-58H / PT265). Paired: $names',
       );
     }
-    await _connectTo(target.macAdress, target.name);
+    await _connectTo(target.macAdress, target.name, force: true);
   }
 
-  Future<void> _connectTo(String nextMac, String nextName) async {
-    if (await isConnected) {
-      await PrintBluetoothThermal.disconnect;
-    }
-    final ok = await PrintBluetoothThermal.connect(macPrinterAddress: nextMac);
-    if (!ok) {
+  Future<void> _connectTo(String nextMac, String nextName, {bool force = false}) async {
+    await _ensureReady();
+    try {
+      if (force || await isConnected) {
+        await PrintBluetoothThermal.disconnect;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      final ok = await PrintBluetoothThermal.connect(macPrinterAddress: nextMac);
+      if (!ok) {
+        // One more attempt after a short pause — common for PT265 on Android.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        final retry = await PrintBluetoothThermal.connect(macPrinterAddress: nextMac);
+        if (!retry) {
+          throw PrinterException(
+            'Could not connect to ${nextName.isEmpty ? 'the printer' : nextName}. '
+            'Turn it on, keep it near the tablet, and make sure it is paired in Bluetooth settings.',
+          );
+        }
+      }
+      await Future<void>.delayed(Duration(milliseconds: _isAndroid ? 450 : 150));
+      await remember(nextMac, nextName);
+    } on PlatformException catch (error) {
+      if (_isPermissionError(error)) {
+        throw PrinterException(
+          'Allow Nearby devices / Bluetooth for JA Merchandise, then try again.',
+        );
+      }
       throw PrinterException(
-        'Could not connect to ${nextName.isEmpty ? 'the printer' : nextName}. Turn it on, keep it in range, then try again.',
+        'Could not connect to ${nextName.isEmpty ? 'the printer' : nextName}. ${error.message ?? ''}'.trim(),
       );
     }
-    await remember(nextMac, nextName);
   }
 
   Future<void> _ensureReady() async {
-    if (_needsRuntimeBluetoothPermission) {
+    if (_isAndroid) {
+      final statuses = await [
+        Permission.bluetoothConnect,
+        Permission.bluetoothScan,
+      ].request();
+      final denied = statuses.values.any(
+        (status) => status.isDenied || status.isPermanentlyDenied || status.isRestricted,
+      );
+      if (denied) {
+        throw PrinterException(
+          'Allow Nearby devices / Bluetooth for JA Merchandise in Android settings, then try again.',
+        );
+      }
+    } else if (_needsRuntimeBluetoothPermission) {
       final granted = await PrintBluetoothThermal.isPermissionBluetoothGranted;
       if (!granted) {
         throw PrinterException(
@@ -165,6 +223,7 @@ class BluetoothPrinter {
         );
       }
     }
+
     if (_needsRuntimeBluetoothPermission && !await PrintBluetoothThermal.bluetoothEnabled) {
       throw PrinterException('Turn on Bluetooth, then try again.');
     }
@@ -174,6 +233,12 @@ class BluetoothPrinter {
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS ||
       defaultTargetPlatform == TargetPlatform.macOS;
+
+  bool _isPermissionError(PlatformException error) {
+    final code = error.code.toLowerCase();
+    final message = (error.message ?? '').toLowerCase();
+    return code.contains('permission') || message.contains('permission');
+  }
 
   BluetoothInfo? _pickGoojprt(List<BluetoothInfo> devices) {
     BluetoothInfo? best;
@@ -194,6 +259,10 @@ class BluetoothPrinter {
     final name = raw.toLowerCase().replaceAll(RegExp(r'[\s\-_]+'), '');
     if (name.contains('goojprt')) return 100;
     if (RegExp(r'pt\d{2,}').hasMatch(name)) return 95;
+    // XPrinter / XP-58H style 58mm ESC/POS printers
+    if (name.contains('xprinter') || RegExp(r'^xp\d').hasMatch(name) || name.contains('xp58')) {
+      return 94;
+    }
     if (name.contains('mtp')) return 90;
     if (name.contains('pos58') || name.contains('pos80')) return 80;
     if (name.contains('jp58')) return 80;

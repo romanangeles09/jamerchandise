@@ -7,9 +7,9 @@ class AppConfig {
     if (kIsWeb) {
       final host = Uri.base.host;
       if (host == 'localhost' || host == '127.0.0.1') {
-        return 'http://localhost:5000/api';
+        return 'http://localhost:5000/api/jamerchandiseRoutes';
       }
     }
-    return 'https://178.128.211.176/api';
+    return 'https://178.128.211.176/api/jamerchandiseRoutes';
   }
 }
